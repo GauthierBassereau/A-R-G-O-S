@@ -1,0 +1,68 @@
+# macOS
+.DS_Store
+Icon?
+*.icloud
+Thumbs.db
+
+# General temp files
+*.swp
+*.swo
+*.orig
+*.bak
+*.tmp
+~$*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+*.dylib
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+*.manifest
+*.spec
+*.coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+.cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+coverage/
+__pypackages__/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors/IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Obsidian vault config
+.obsidian/
+
+# Office temporary files
+~$*.doc*
+~$*.xls*
+~$*.ppt*
+
+# Logs
+logs/
+*.log
+
