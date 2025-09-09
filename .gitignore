@@ -66,3 +66,5 @@ ENV/
 logs/
 *.log
 
+# Files for my graphs, papers etc...
+/documentation/

@@ -9,40 +9,27 @@ The approach consists of two main steps:
 
 All images are treated as **states**, represented as embeddings from **DINOv3**
 
-## 1. Planning
+## Model Pipeline
+The world model is an auto-regressive generative model, conditioned on either text or actions.
+1. World Model predicts a trajectory of next states, conditioned on text, this becomes the **objective**.
+2. Use **CEM** algorithm and World Model conditioned on actions to optimize a trajectory of actions to be as close as possible to the **objective**.
 
-- **Text Predictor:**
-  - Implemented with a **diffusion model** DiT, trained autoregressively in the same way as video generation.
-  - **Conditioning:** The model is conditioned on **text instructions** to guide the generated plan.
-  - Timestep between predcictions: 0.25s (Could be interesting to make it bigger...)
-
-- **Data**
-    - Raw videos with text description of the instruction for the task being done in the video
-
-## 2. Actioning  
-- **Goal:**  
-  - Optimize actions to align with the generated plan.
-
-- **Action Predictor:**  
-  - Fine-tuned version of the Text predictor
-  - **Conditioning:** The model is conditioned on **joint values**.
-  - Timestep between predcictions: 0.25s (Could be interesting to make it smaller...)
-
-- **Optimization:**  
-  - Use **CEM (Cross-Entropy Method)** or other optimization algorithms to select the best actions, ensuring that the generated future states match the planned trajectory.
-
-- **Data**
-    - Raw videos with joint values (Can be completly random trajectoris, no real need for special demonstrations)
+## Model Architecure
+It is a DiT backbone with added tokens to the Attention layer. It can be:
+- Text tokens
+- Action tokens
+- Context tokens
 
 ---
 
 ## Data to explore
-- **Robot Data with instructions:**
+- **Task centric Robot Data:**
     - AGIBOTWORLD
     - Open X Embodiment
     - Droid
     - RobotMind
     - SO100 Community
+    - BridgeData V2, Egodex, RoboVQA, HoloAssist, Ego4D
 
 - **Raw videos of people doing things:**
     - HowTo100M
@@ -85,3 +72,22 @@ All images are treated as **states**, represented as embeddings from **DINOv3**
 - `utils/`: Transforms, IO helpers, seeding, device and logging utilities.
 - `tests/`: tests.
 - `logs/`: Experiment outputs and metrics.
+
+---
+## Git commands so I don't forget aha
+
+### Create a new branch
+git pull origin main
+git checkout -b feature/my-new-feature
+
+### Merge the branch
+git checkout main
+git pull origin main
+git merge feature/my-new-feature
+git push origin main
+
+### Cleanup
+git branch -d feature/my-new-feature
+git push origin --delete feature/my-new-feature
+
+
