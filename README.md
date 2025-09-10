@@ -15,10 +15,11 @@ The world model is an auto-regressive generative model, conditioned on either te
 2. Use **CEM** algorithm and World Model conditioned on actions to optimize a trajectory of actions to be as close as possible to the **objective**.
 
 ## Model Architecure
-It is a DiT backbone with added tokens to the Attention layer. It can be:
+It is a DiT backbone with added cross-attention to:
 - Text tokens
 - Action tokens
 - Context tokens
+(Those are all optional)
 
 ---
 
@@ -43,8 +44,7 @@ It is a DiT backbone with added tokens to the Attention layer. It can be:
 ## Improvements for next versions
 - Add history/memory -> adding past frames to the predictors
     - Use relative position embedding.
-    - Use some kind of memory bank that gets updated when a new token doesn't match anything in the memory bank
-
+    - Use some kind of memory bank that gets updated when a new token doesn't match anything in the memory bank / Use PCA to get rid of uselss tokens (see DINO Foresight)
 - Generate the plan on mutiple scale
     (1) Goal Image
     (2) Generate one intermediate step bewteen current state and Goal Image
@@ -52,26 +52,8 @@ It is a DiT backbone with added tokens to the Attention layer. It can be:
     (4) Optimize actions to reach the intermediates states
 
 - Train the Action Predictor entirely in simulation with very varying background so that the model generelizes very well
-
 - Replace Teacher Forcing by Self Forcing
 
----
-
-## Code Structure
-- `datasets/`: Data loaders and samplers.
-  - Planning uses AGIBOTWORLD (videos + text instructions).
-  - Actioning uses SO-100 (states + joint values + instructions).
-- `embeddings/`: Encoders for image (DINOv3) and text (T5/CLIP); optional caching utilities.
-- `models/`: Core networks.
-  - `planning/`: Text-conditioned DiT for next-state planning and autoregressive rollout.
-  - `actioning/`: Action predictor/dynamics model conditioned on joint values.
-- `optim/`: Optimization algorithms (e.g., CEM) to select actions matching planned trajectories; schedulers lr and diffusion
-- `trainers/`: Training loops, evaluation, checkpointing for planner and action models.
-- `pipelines/`: End-to-end plan-and-act orchestration and evaluation routines.
-- `scripts/`: CLIs for data prep, embedding precompute, training, inference, and demos.
-- `utils/`: Transforms, IO helpers, seeding, device and logging utilities.
-- `tests/`: tests.
-- `logs/`: Experiment outputs and metrics.
 
 ---
 ## Git commands so I don't forget aha

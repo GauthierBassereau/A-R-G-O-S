@@ -1,6 +1,8 @@
 import torch
 from typing import Dict, Iterable, Optional, Literal
 
+from source.settings import WorldEncoderDinov3Config
+
 class WorldEncoderDinov3:
     def __init__(self,
                  head_ckpt: Optional[str] = None,
@@ -26,6 +28,39 @@ class WorldEncoderDinov3:
         self.model.eval().to(self.device)
         if self.dtype is not None:
             self.model.to(self.dtype)
+
+    @classmethod
+    def from_config(cls, cfg: "WorldEncoderDinov3Config") -> "WorldEncoderDinov3":
+        """Create the encoder from a Pydantic config.
+
+        Expects `cfg.device` in {None, "auto", "cuda", "mps", "cpu"} and
+        `cfg.dtype` in {None, "float16", "bfloat16", "float32"}.
+        """
+        if cfg is None:
+            raise ValueError("cfg must be provided")
+
+        device = None if cfg.device in (None, "auto") else cfg.device
+        dtype = None
+        if cfg.dtype is not None:
+            map_dtype = {
+                "float16": torch.float16,
+                "bfloat16": torch.bfloat16,
+                "float32": torch.float32,
+            }
+            try:
+                dtype = map_dtype[cfg.dtype]
+            except KeyError as e:
+                raise ValueError(f"Unsupported dtype '{cfg.dtype}'. Use one of {list(map_dtype)}") from e
+
+        return cls(
+            head_ckpt=cfg.head_ckpt,
+            backbone_ckpt=cfg.backbone_ckpt,
+            repo=cfg.repo,
+            hub_entry=cfg.hub_entry,
+            source=cfg.source,  # type: ignore[arg-type]
+            device=device,
+            dtype=dtype,
+        )
 
     @torch.inference_mode()
     def encode_image(self, images: torch.Tensor, text_head: bool = True, normalize: bool = True) -> Dict[str, torch.Tensor]:
@@ -116,14 +151,22 @@ def _assert_same_tokens(dino_tok, texts):
 if __name__ == "__main__":
     dinov3 = WorldEncoderDinov3(device="cpu")
     print(f"device={dinov3.device}")
-
-    texts = ["robot arm resting", "robot arm grasping a dinosaur"]
+    print(dinov3.model)
     
-    _assert_same_tokens(dinov3.tokenizer, texts)
+    import time
+    start_time = time.time()
 
     B, H, W = 2, 224, 224
     img = torch.randn(B, 3, H, W)
-    out = dinov3.encode_image(img, text_head=False, normalize=True)
+    out = dinov3.encode_image(img, text_head=True, normalize=True)
     for k, v in out.items():
         if v is not None:
             print(f"{k}: {tuple(v.shape)}")
+            
+    texts = ["robot arm resting", "robot arm grasping a dinosaur"]
+    _assert_same_tokens(dinov3.tokenizer, texts)
+    txt_feats = dinov3.encode_text(texts, normalize=True)
+    print(f"text_feats: {tuple(txt_feats.shape)}")
+    
+    end_time = time.time()
+    print(f"Time: {end_time - start_time:.2f} sec")
