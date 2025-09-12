@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from PIL import Image
 import matplotlib.pyplot as plt
 
-from source.models.world_encoder_dinov3 import WorldEncoderDinov3
+from source.models.image_encoder_dinov3 import ImageEncoderDinov3
 from source.utils.image_transforms import make_transform
 
 def round_to_multiple(x, m=16):
@@ -16,7 +16,7 @@ def round_to_multiple(x, m=16):
 
 def load_image(path):
     img = Image.open(path).convert("RGB")
-    tfm = make_transform(1024)   # always resize to 256x256 for DINOv3
+    tfm = make_transform(512)   # always resize to 256x256 for DINOv3
     tensor = tfm(img).unsqueeze(0)  # (1,3,H,W) in [0,1] normalized
     return img, tensor
 
@@ -25,15 +25,18 @@ def compute_patch_similarity(dinov3, img_tensor, yx=None, patch_size=16):
     img_tensor: (1,3,H,W) after normalization and resized to multiples of 16
     yx: (y,x) pixel coordinates in the (resized) tensor space. If None, pick center.
     """
-    out = dinov3.encode_image(img_tensor, text_head=True, normalize=True)
-    patch_bb = out["patch_backbone"]  # (1, P, C) features after final LN if normalize=True in your call
+    # ensure tensor is on the same device/dtype as the model
+    model_param = next(dinov3.parameters())
+    img_tensor = img_tensor.to(device=model_param.device, dtype=model_param.dtype)
+    out = dinov3(img_tensor, text_head=True, normalize=False)
+    patch_bb = out["patch_text"]  # (1, P, C) features after final LN if normalize=True in your call
     assert patch_bb is not None, "Backbone patch tokens missing"
 
     # L2-normalize per token for cosine similarity
     feats = F.normalize(patch_bb[0], dim=-1)  # (P, C)
 
     patch_size = 16
-    H = W = 1024
+    H = W = 512
     hp, wp = H // patch_size, W // patch_size  # → 14x14 patches
     P = hp * wp
     assert feats.shape[0] == P, f"Unexpected token count: {feats.shape[0]} vs {P}"
@@ -58,7 +61,7 @@ def compute_patch_similarity(dinov3, img_tensor, yx=None, patch_size=16):
     heat_min, heat_max = torch.quantile(heat, 0.01), torch.quantile(heat, 0.99)
     heat = (heat - heat_min) / (heat_max - heat_min + 1e-6)
     heat = heat.clamp(0, 1)
-    return heat.cpu().numpy(), (ri, rj), (H, W)
+    return heat.detach().cpu().numpy(), (ri, rj), (H, W)
 
 def show_overlay(pil_img, heatmap, pick_xy, resized_shape, patch_size=16, title="Patch similarity"):
     """
@@ -123,8 +126,7 @@ def main():
     parser.add_argument("--y", type=int, default=None, help="Pixel y (in original image)")
     parser.add_argument("--device", type=str, default=None, help='e.g., "cuda", "mps", or "cpu"')
     parser.add_argument("--dtype", type=str, default=None, help='e.g., "float16" or "bfloat16"')
-    parser.add_argument("--head_ckpt", type=str, default=None)
-    parser.add_argument("--backbone_ckpt", type=str, default=None)
+    # Checkpoints are not used in the current encoder implementation
     args = parser.parse_args()
 
     # dtype parsing
@@ -144,12 +146,11 @@ def main():
     pil_img, img_tensor = load_image(Path(args.image))
 
     # 2) Init DINOv3
-    dinov3 = WorldEncoderDinov3(
-        head_ckpt=args.head_ckpt,
-        backbone_ckpt=args.backbone_ckpt,
-        device=args.device,
-        dtype=torch_dtype,
-    )
+    dinov3 = ImageEncoderDinov3()
+    # Move model to requested device/dtype if provided
+    if args.device is not None or torch_dtype is not None:
+        dinov3 = dinov3.to(device=args.device if args.device is not None else None,
+                           dtype=torch_dtype if torch_dtype is not None else None)
 
     # 3) If coordinates are provided, compute & show directly
     if args.x is not None and args.y is not None:
