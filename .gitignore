@@ -63,5 +63,4 @@ ENV/
 ~$*.ppt*
 
 wandb/
-documentation/
-data/
+archive/
