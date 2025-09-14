@@ -62,9 +62,6 @@ ENV/
 ~$*.xls*
 ~$*.ppt*
 
-# Logs
-logs/
-*.log
-
+wandb/
 documentation/
 data/

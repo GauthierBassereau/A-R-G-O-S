@@ -1,7 +1,7 @@
-# A-R-G-O-S
+# A-R-G-O-S (Work in progress...)
 
 ## Overview  
-A-R-G-O-S is a research project aimed at solving **physical intelligence** by bridging **planning** and **actioning** through generative models and optimization.  
+A-R-G-O-S is a research project aimed at solving **physical intelligence** by bridging **planning** and **actioning** through generative models and optimization.
 
 The approach consists of two main steps:  
 1. **Planning** – generating high-level trajectories of future states.
@@ -39,7 +39,7 @@ It is a DiT backbone with added cross-attention to:
 - Take current state + instructions
 - Predict next 2 seconds of states, auto-regressively, taking the last generated state as input (Teacher Forcing)
 - Optimize actions to match the generated states
-- Do a POC with AGIBOTWORLD dataset for planning predictor and will use SO-100 dataset for action predictor
+- Do a POC with AGIBOTWORLD dataset for pre-training planning predictor and will use SO-100 dataset for action predictor and fine-tuning the planning predictor.
 
 ## Improvements for next versions
 - Add history/memory -> adding past frames to the predictors
@@ -50,26 +50,5 @@ It is a DiT backbone with added cross-attention to:
     (2) Generate one intermediate step bewteen current state and Goal Image
     (3) Redo (2) X times
     (4) Optimize actions to reach the intermediates states
-
-- Train the Action Predictor entirely in simulation with very varying background so that the model generelizes very well
+- Train the Action Predictor entirely in simulation with varying background -> showing that the action predictor can be train with almost no cost.
 - Replace Teacher Forcing by Self Forcing
-
-
----
-## Git commands so I don't forget aha
-
-### Create a new branch
-git pull origin main
-git checkout -b feature/my-new-feature
-
-### Merge the branch
-git checkout main
-git pull origin main
-git merge feature/my-new-feature
-git push origin main
-
-### Cleanup
-git branch -d feature/my-new-feature
-git push origin --delete feature/my-new-feature
-
-

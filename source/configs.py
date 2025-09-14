@@ -1,10 +1,9 @@
-from typing import Optional
+from typing import Optional, Tuple
 from dataclasses import dataclass
 import torch
 import logging
 
 # ---------- Logging ----------
-
 def config_logging(level: str = "INFO"):
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
@@ -13,11 +12,13 @@ def config_logging(level: str = "INFO"):
     )
 
 # ---------- Configs for Pipelines ----------
-
-
+@dataclass
+class TrainerConfig:
+    device: str = "mps"
+    learning_rate: float = 1e-3
+    batch_size: int = 1
 
 # ---------- Configs for Models ----------
-
 @dataclass
 class ImageDecoderTransposeConfig:
     feature_dim: int = 1024
@@ -29,7 +30,6 @@ class ImageDecoderTransposeConfig:
     dtype: Optional[torch.dtype] = None
     
 # ---------- Configs for DatasetStream ----------
-
 @dataclass
 class HTTPConfig:
     connect_timeout: float = 0.6
@@ -45,6 +45,8 @@ class StreamConfig:
     shuffle_buffer: int = 512
     log_interval_s: float = 2.0
     url_col_name: str = "URL"
+    width_col_name: str = "WIDTH"
+    height_col_name: str = "HEIGHT"
     transform_size: int = 512
-    batch_size: int = 2
+    min_size: Tuple[int, int] = (256, 256)
     seed: Optional[int] = None # Random seed only used for buffer pop / shuffling (doesn't affect global)

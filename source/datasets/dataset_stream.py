@@ -15,7 +15,6 @@ from typing import Iterable, Iterator, List, Optional, Sequence
 import requests
 import torch
 from PIL import Image
-import numpy as np
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -88,6 +87,11 @@ class DatasetStream(IterableDataset):
             data_files={"train": self.parquet_urls},
             streaming=True,
         )["train"]
+        
+    def _check_min_img_size(self, hf_row):
+        w = hf_row.get(self.stream_cfg.width_col_name, None)
+        h = hf_row.get(self.stream_cfg.height_col_name, None)
+        return (w >= self.stream_cfg.min_size[0]) and (h >= self.stream_cfg.min_size[1])
 
     def __iter__(self) -> Iterator[torch.Tensor]:
         # Local RNG for shuffling so multiprocessing workers are independent
@@ -100,7 +104,7 @@ class DatasetStream(IterableDataset):
 
         in_flight = set()
         shuffle_buf: List[torch.Tensor] = []
-        ok = fail = 0
+        ok = fail = min_size_skip = 0
 
         def submit(url: str):
             return executor.submit(_fetch_and_process, url, session, self.http_cfg, self.transform)
@@ -115,6 +119,10 @@ class DatasetStream(IterableDataset):
                 url = row.get(self.stream_cfg.url_col_name)
                 if not url:
                     logger.debug("Skipping row with no URL column '%s'.", self.stream_cfg.url_col_name)
+                    continue
+                if not self._check_min_img_size(hf_row=row):
+                    min_size_skip += 1
+                    logger.debug("Skipping row with no valid minimum image size")
                     continue
                 in_flight.add(submit(url))
             logger.info("Primed with %d requests.", len(in_flight))
@@ -153,8 +161,8 @@ class DatasetStream(IterableDataset):
 
                 # Periodic stats
                 if time.time() - last_log > self.stream_cfg.log_interval_s:
-                    logger.info("ok=%d fail=%d in_flight=%d buf=%d",
-                                ok, fail, len(in_flight), len(shuffle_buf))
+                    logger.info("ok=%d fail=%d skip_min_size=%d in_flight=%d buf=%d",
+                                ok, fail, min_size_skip, len(in_flight), len(shuffle_buf))
                     last_log = time.time()
 
             # Flush buffer
