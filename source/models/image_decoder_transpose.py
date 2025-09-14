@@ -2,7 +2,7 @@ import torch
 import einops
 import torch.nn as nn
 import torch.nn.functional as F
-from source.settings import ImageDecoderTransposeConfig
+from source.configs import ImageDecoderTransposeConfig
 
 def initialize_weights(m):
     if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
@@ -46,97 +46,63 @@ def create_normal_dist(
     
 
 class ImageDecoderTranspose(nn.Module):
-    def __init__(
-        self, 
-        observation_shape=(3, 224, 224), 
-        emb_dim=512, 
-        activation=nn.ReLU, 
-        depth=64, 
-        kernel_size=5, 
-        stride=3
-    ):
+    def __init__(self, observation_shape=(3, 512, 512), feature_dim=1024,
+                 activation=nn.ReLU, depth=64, kernel_size=5, stride=3):
         super().__init__()
+        act = activation()
+        C, H, W = observation_shape
 
-        activation = activation()
         self.observation_shape = observation_shape
+        self.feature_dim = feature_dim
         self.depth = depth
         self.kernel_size = kernel_size
         self.stride = stride
-        self.emb_dim = emb_dim
 
+        self.proj = nn.Conv2d(feature_dim, depth*32, kernel_size=1)
         self.network = nn.Sequential(
-            nn.Linear(
-                emb_dim, self.depth * 32
-            ),
-            nn.Unflatten(1, (self.depth * 32, 1)),
-            nn.Unflatten(2, (1,1)),
-            nn.ConvTranspose2d(
-                self.depth * 32,
-                self.depth * 8,
-                self.kernel_size,
-                self.stride,
-                padding=1
-            ),
-            activation,
-            nn.ConvTranspose2d(
-                self.depth * 8,
-                self.depth * 4,
-                self.kernel_size,
-                self.stride,
-                padding=1
-            ),
-            activation,
-            nn.ConvTranspose2d(
-                self.depth * 4,
-                self.depth * 2,
-                self.kernel_size,
-                self.stride,
-                padding=1
-            ),
-            activation,
-            nn.ConvTranspose2d(
-                self.depth * 2,
-                self.depth * 1,
-                self.kernel_size,
-                self.stride,
-                padding=1
-            ),
-            activation,
-            nn.ConvTranspose2d(
-                self.depth * 1,
-                self.observation_shape[0],
-                self.kernel_size,
-                self.stride,
-                padding=1
-            ),
-            nn.Upsample(size=(observation_shape[1], observation_shape[2]), mode='bilinear', align_corners=False)
+            act,
+            nn.ConvTranspose2d(depth*32, depth*8, kernel_size, stride, padding=1),
+            act,
+            nn.ConvTranspose2d(depth*8, depth*4, kernel_size, stride, padding=1),
+            act,
+            nn.ConvTranspose2d(depth*4, depth*2, kernel_size, stride, padding=1),
+            act,
+            nn.ConvTranspose2d(depth*2, depth*1, kernel_size, stride, padding=1),
+            act,
+            nn.ConvTranspose2d(depth*1, C, kernel_size, stride, padding=1),
+            nn.Upsample(size=(H, W), mode='bilinear', align_corners=False),
+            # nn.Sigmoid()
         )
-        self.network.apply(initialize_weights)
+        self.apply(initialize_weights)
         
     @classmethod
-    def from_config(cls, cfg: ImageDecoderTransposeConfig) -> "ImageDecoderTranspose":
+    def from_config(cls, cfg):
         return cls(
             observation_shape=cfg.observation_shape,
-            emb_dim=cfg.feature_dim,
+            feature_dim=cfg.feature_dim,
             depth=cfg.depth,
             kernel_size=cfg.kernel_size,
-            stride=cfg.stride,
+            stride=cfg.stride
         )
 
-    def forward(self, posterior):
-        x = horizontal_forward(
-            self.network, posterior, input_shape=[self.emb_dim],output_shape=self.observation_shape
-        )
-        dist = create_normal_dist(x, std=1, event_shape=len(self.observation_shape))
-        img = dist.mean.squeeze(2)
-        img = einops.rearrange(img, "b t c h w -> (b t) c h w")
-        return img, torch.zeros(1).to(posterior.device) # dummy placeholder
+    def forward(self, z):
+        B, N, E = z.shape
+        Hp = Wp = int(N**0.5)  # -> 32 for N=1024
+        assert Hp*Wp == N, "N must be a perfect square to form a grid"
+
+        # (B, N, E) -> (B, E, Hp, Wp)
+        z = z.view(B, Hp, Wp, E).permute(0, 3, 1, 2).contiguous()
+
+        x = self.proj(z)         # (B, depth*32, Hp, Wp)
+        x = self.network(x)      # (B, C, H, W)
+
+        return x
+
     
 if __name__ == "__main__":
     cfg = ImageDecoderTransposeConfig()
     model = ImageDecoderTranspose.from_config(cfg)
     model.to("mps")
-    B, T = 2, 4
-    z = torch.randn(B, T, cfg.feature_dim).to("mps")
-    img, _ = model(z)
+    z = torch.randn(2, 1024, 1024).to("mps")
+    img = model(z)
     print("img:", tuple(img.shape))

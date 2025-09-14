@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from source.settings import WorldModelFMConfig
+from source.configs import WorldModelFMConfig
 
 class WorldModelFM(nn.Module):
     """

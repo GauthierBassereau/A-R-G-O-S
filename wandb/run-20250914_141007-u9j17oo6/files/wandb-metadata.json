@@ -1,0 +1,35 @@
+{
+  "os":  "macOS-26.0-arm64-arm-64bit",
+  "python":  "CPython 3.10.15",
+  "startedAt":  "2025-09-14T11:10:07.123356Z",
+  "program":  "-m source.pipelines.train_decoder",
+  "git":  {
+    "remote":  "https://github.com/Gautthegoat/A-R-G-O-S.git",
+    "commit":  "28757d40f9ef70fb916612a1f8b0aa7a582cf4ea"
+  },
+  "email":  "gauthier.bassereau@gmail.com",
+  "root":  "/Users/gauthierbassereau/Library/Mobile Documents/com~apple~CloudDocs/Perso 🏠/A-R-G-O-S",
+  "host":  "MacBook-Pro-5.local",
+  "executable":  "/opt/anaconda3/envs/ML/bin/python3",
+  "cpu_count":  11,
+  "cpu_count_logical":  11,
+  "disk":  {
+    "/":  {
+      "total":  "494353338368",
+      "used":  "287027142656"
+    }
+  },
+  "memory":  {
+    "total":  "19327352832"
+  },
+  "apple":  {
+    "name":  "Apple M3 Pro",
+    "ecpuCores":  6,
+    "pcpuCores":  5,
+    "gpuCores":  14,
+    "memoryGb":  18,
+    "swapTotalBytes":  "4294967296",
+    "ramTotalBytes":  "19327352832"
+  },
+  "writerId":  "fr4pau2yq1zsghmla4xdgec2ibk04yid"
+}

@@ -16,7 +16,7 @@ def round_to_multiple(x, m=16):
 
 def load_image(path):
     img = Image.open(path).convert("RGB")
-    tfm = make_transform(512)   # always resize to 256x256 for DINOv3
+    tfm = make_transform(482)   # always resize to 256x256 for DINOv3
     tensor = tfm(img).unsqueeze(0)  # (1,3,H,W) in [0,1] normalized
     return img, tensor
 
@@ -28,15 +28,15 @@ def compute_patch_similarity(dinov3, img_tensor, yx=None, patch_size=16):
     # ensure tensor is on the same device/dtype as the model
     model_param = next(dinov3.parameters())
     img_tensor = img_tensor.to(device=model_param.device, dtype=model_param.dtype)
-    out = dinov3(img_tensor, text_head=True, normalize=False)
-    patch_bb = out["patch_text"]  # (1, P, C) features after final LN if normalize=True in your call
+    out = dinov3(img_tensor, text_head=False, normalize=True)
+    patch_bb = out["patch_backbone"]  # (1, P, C) features after final LN if normalize=True in your call
     assert patch_bb is not None, "Backbone patch tokens missing"
 
     # L2-normalize per token for cosine similarity
     feats = F.normalize(patch_bb[0], dim=-1)  # (P, C)
 
     patch_size = 16
-    H = W = 512
+    H = W = 482
     hp, wp = H // patch_size, W // patch_size  # → 14x14 patches
     P = hp * wp
     assert feats.shape[0] == P, f"Unexpected token count: {feats.shape[0]} vs {P}"
