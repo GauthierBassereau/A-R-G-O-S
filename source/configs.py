@@ -16,7 +16,7 @@ def config_logging(level: str = "INFO"):
 class TrainerConfig:
     device: str = "mps"
     learning_rate: float = 1e-3
-    batch_size: int = 1
+    batch_size: int = 2
 
 # ---------- Configs for Models ----------
 @dataclass
@@ -31,22 +31,20 @@ class ImageDecoderTransposeConfig:
     
 # ---------- Configs for DatasetStream ----------
 @dataclass
-class HTTPConfig:
-    connect_timeout: float = 0.6
-    read_timeout: float = 1.2
-    total_retries: int = 1
-    user_agent: str = "Mozilla/5.0 (LAION-stream/0.1)"
-    pool_size: int = 128  # same as max_workers by default
-
-@dataclass
-class StreamConfig:
-    max_workers: int = 128 # Number of parallel fetches
-    max_in_flight: int = 128 # Memory usage ~ max_in_flight * image_size_in_bytes
-    shuffle_buffer: int = 512
-    log_interval_s: float = 2.0
-    url_col_name: str = "URL"
-    width_col_name: str = "WIDTH"
-    height_col_name: str = "HEIGHT"
-    transform_size: int = 512
-    min_size: Tuple[int, int] = (256, 256)
-    seed: Optional[int] = None # Random seed only used for buffer pop / shuffling (doesn't affect global)
+class HFStreamConfig:
+    hf_dataset: str = "laion/laion-coco"
+    split: str = "train"
+    streaming: bool = True
+    batch_size: int = 64 # Overwritten by TrainerConfig
+    yield_partial_final: bool = False  # yield the last small batch
+    max_concurrency: int = 32
+    per_host_limit: int = 8
+    total_timeout_sec: float = 2.0
+    connect_timeout_sec: float = 2.0
+    read_timeout_sec: float = 2.0
+    retries: int = 1
+    user_agent: str = "hf-image-loader/1.0"
+    ssl: bool = False # Don't care about man in the middle attack
+    ttl_dns_cache: int = 300
+    url_key: str = "URL"
+    text_key: str = "TEXT"

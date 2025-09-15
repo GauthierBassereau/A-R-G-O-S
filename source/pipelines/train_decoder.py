@@ -1,27 +1,20 @@
 import logging
 import torch
 import wandb
-from source.configs import HTTPConfig, StreamConfig, TrainerConfig, config_logging, ImageDecoderTransposeConfig
-from source.datasets.dataset_stream import DatasetStream, batch_iterator
+from source.configs import HFStreamConfig, TrainerConfig, config_logging, ImageDecoderTransposeConfig
+from source.datasets.dataset_hf import HFAsyncImageDataLoader
 from source.models.image_decoder_transpose import ImageDecoderTranspose
 from source.models.image_encoder_dinov3 import ImageEncoderDinov3
-from source.utils.image_transforms import IMAGENET_MEAN, IMAGENET_STD
+from source.utils.image_transforms import make_transform, IMAGENET_MEAN, IMAGENET_STD
 
 config_logging("INFO")
 log = logging.getLogger(__name__)
 
 trainer_cfg = TrainerConfig()
-http_cfg = HTTPConfig()
-stream_cfg = StreamConfig()
+dataset_cfg = HFStreamConfig(batch_size=trainer_cfg.batch_size)
 image_decoder_cfg = ImageDecoderTransposeConfig()
 
-# Dataset Laion400M
-BASE = "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta"
-UUID = "5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36"
-N_SHARDS = 32
-remote_parquets = [f"{BASE}/part-{i:05d}-{UUID}-c000.snappy.parquet" for i in range(N_SHARDS)]
-
-dataset = DatasetStream(remote_parquets, stream_cfg, http_cfg)
+dataset_loader = HFAsyncImageDataLoader.from_config(dataset_cfg, transform=make_transform(512))
 
 encoder = ImageEncoderDinov3().to(trainer_cfg.device).eval()
 decoder = ImageDecoderTranspose.from_config(image_decoder_cfg).to(trainer_cfg.device).train()
@@ -36,21 +29,22 @@ wandb.init(
         "batch_size": trainer_cfg.batch_size,
         "lr": trainer_cfg.learning_rate,
         "device": trainer_cfg.device
-    }
-)
-step = 0
+    })
+
 mean = torch.tensor(IMAGENET_MEAN, device=trainer_cfg.device).view(1,3,1,1)
 std = torch.tensor(IMAGENET_STD, device=trainer_cfg.device).view(1,3,1,1)
-for batch in batch_iterator(iter(dataset), batch_size=trainer_cfg.batch_size):
-    batch = batch.to(trainer_cfg.device)
+
+step = 0
+for batch in dataset_loader:
+    images = batch["images"].to(trainer_cfg.device)
     
     with torch.inference_mode():
-        enc_out = encoder(batch, text_head=False, normalize=True)    
+        enc_out = encoder(images, text_head=False, normalize=True)    
         
     feats = enc_out["patch_backbone"].clone()
     recons = decoder(feats)
 
-    loss = criterion(recons, batch)
+    loss = criterion(recons, images)
     wandb.log({"train/loss": loss.item()}, step=step)
     log.info("  loss: %.6f", float(loss))
     optim.zero_grad()
@@ -68,5 +62,3 @@ for batch in batch_iterator(iter(dataset), batch_size=trainer_cfg.batch_size):
         }, step=step)
 
     step += 1
-    if step >= 1000:
-        break
