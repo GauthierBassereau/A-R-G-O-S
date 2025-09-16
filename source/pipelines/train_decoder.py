@@ -1,4 +1,6 @@
 import logging
+from pathlib import Path
+
 import torch
 import wandb
 
@@ -30,7 +32,7 @@ encoder = ImageEncoderDinov3().to(trainer_cfg.device).eval()
 decoder = ImageDecoderTranspose.from_config(image_decoder_cfg).to(trainer_cfg.device).train()
 
 criterion = torch.nn.MSELoss()
-optim = torch.optim.Adam(decoder.parameters(), lr=trainer_cfg.learning_rate)
+optim = torch.optim.AdamW(decoder.parameters(), lr=trainer_cfg.learning_rate)
 
 run_config = collect_configs(
     trainer=trainer_cfg,
@@ -49,7 +51,16 @@ wandb.init(
 mean = torch.tensor(IMAGENET_MEAN, device=trainer_cfg.device).view(1,3,1,1)
 std = torch.tensor(IMAGENET_STD, device=trainer_cfg.device).view(1,3,1,1)
 
+checkpoint_dir = Path(trainer_cfg.checkpoint_dir)
+checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+accum_steps = trainer_cfg.gradient_accumulation_steps
+micro_step = 0
 step = 0
+accum_loss = 0.0
+
+optim.zero_grad()
+
 for batch in dataset_loader:
     images = batch["images"].to(trainer_cfg.device)
     
@@ -60,15 +71,44 @@ for batch in dataset_loader:
     recons = decoder(feats)
 
     loss = criterion(recons, images)
-    wandb.log({"train/loss": loss.item()}, step=step)
-    log.info("  loss: %.6f", float(loss))
-    optim.zero_grad()
+    loss_value = float(loss.item())
+    accum_loss += loss_value
+    loss = loss / accum_steps
     loss.backward()
-    optim.step()
+    micro_step += 1
 
-    if (
-        trainer_cfg.image_log_frequency > 0
-        and step != 0
+    if micro_step % accum_steps != 0:
+        continue
+
+    optim.step()
+    optim.zero_grad()
+
+    step += 1
+    mean_loss = accum_loss / accum_steps
+    wandb.log({"train/loss": mean_loss}, step=step)
+    log.info("  loss: %.6f", mean_loss)
+    accum_loss = 0.0
+    micro_step = 0
+
+    if (trainer_cfg.checkpoint_frequency > 0
+        and step % trainer_cfg.checkpoint_frequency == 0
+    ):
+        checkpoint_path = checkpoint_dir / f"decoder_step_{step}.pt"
+        torch.save(
+            {
+                "step": step,
+                "model_state_dict": decoder.state_dict(),
+                "optimizer_state_dict": optim.state_dict(),
+            },
+            checkpoint_path,
+        )
+        
+        # Log checkpoint as W&B artifact
+        artifact = wandb.Artifact("decoder-checkpoints", type="model")
+        artifact.add_file(str(checkpoint_path))
+        wandb.log_artifact(artifact)
+
+    if (trainer_cfg.image_log_frequency > 0
         and step % trainer_cfg.image_log_frequency == 0
     ):
         with torch.no_grad():
@@ -78,5 +118,3 @@ for batch in dataset_loader:
             "reconstruction": wandb.Image(recon_vis.permute(1, 2, 0).numpy(), caption=f"recon step {step}"),
             "target": wandb.Image(target_vis.permute(1, 2, 0).numpy(), caption=f"target step {step}")
         }, step=step)
-
-    step += 1

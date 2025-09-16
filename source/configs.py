@@ -6,9 +6,10 @@ import torch
 # ---------- Configs for Pipelines ----------
 @dataclass
 class TrainerConfig:
-    device: str = "mps"
-    learning_rate: float = 1e-3
-    batch_size: int = 2
+    device: str = "cuda"
+    learning_rate: float = 3e-4
+    batch_size: int = 10
+    gradient_accumulation_steps: int = 3
     checkpoint_dir: str = "checkpoints"
     checkpoint_frequency: int = 1000
     image_log_frequency: int = 100
@@ -33,8 +34,8 @@ class HFStreamConfig:
     batch_size: int = 64 # Overwritten by TrainerConfig
     image_size: int = 512
     yield_partial_final: bool = False  # yield the last small batch
-    max_concurrency: int = 32
-    per_host_limit: int = 8
+    max_concurrency: int = 64
+    per_host_limit: int = 64
     total_timeout_sec: float = 2.0
     connect_timeout_sec: float = 2.0
     read_timeout_sec: float = 2.0
