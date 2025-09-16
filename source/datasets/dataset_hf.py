@@ -233,7 +233,7 @@ if __name__ == "__main__":
     from source.utils.utils import debug_show_img
     logging.basicConfig(level=logging.INFO)
     cfg = HFStreamConfig()
-    loader = HFAsyncImageDataLoader.from_config(cfg, transform=make_transform(512))
+    loader = HFAsyncImageDataLoader.from_config(cfg, transform=make_transform(cfg.image_size))
     for batch in loader:
         imgs = batch["images"]  # [B, C, H, W]
         texts = batch["texts"]  # list[str]

@@ -21,6 +21,16 @@ It is a DiT backbone with added cross-attention to:
 - Context tokens
 (Those are all optional)
 
+## Timeline
+1/ **Done**/ DINO encoder for image and text loaded from torch hub.
+2/ **Done** / Create the Image and text pairs dataset streamed from huggingface
+5/ **Todo** / Train Decoder on Image dataset as an Auto-Encoder to be able to have visual interpretaion of futur predictions.
+6/**Todo** / Pre-train the flow matching Dit using the Image dataset. Exactly like a text to image generation model.
+7/**Todo** / Create the video and instructions pairs dataset streamed from hugginface
+8/**Todo** / Train the flow matching Dit using the Video dataset.
+9/**Todo** / Create the video and actions pairs dataset, streamed from hugginface
+10/**Todo** / Continue flow matching DiT training by adding action modality too.
+
 ---
 
 ## Data to explore

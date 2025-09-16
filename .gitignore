@@ -65,3 +65,5 @@ ENV/
 wandb/
 archive/papers
 old/
+checkpoints/
+*.pt

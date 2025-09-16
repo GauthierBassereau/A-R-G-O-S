@@ -1,15 +1,7 @@
-from typing import Optional, Tuple
-from dataclasses import dataclass
-import torch
 import logging
-
-# ---------- Logging ----------
-def config_logging(level: str = "INFO"):
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        datefmt="%H:%M:%S"
-    )
+from dataclasses import dataclass
+from typing import Optional
+import torch
 
 # ---------- Configs for Pipelines ----------
 @dataclass
@@ -17,6 +9,9 @@ class TrainerConfig:
     device: str = "mps"
     learning_rate: float = 1e-3
     batch_size: int = 2
+    checkpoint_dir: str = "checkpoints"
+    checkpoint_frequency: int = 1000
+    image_log_frequency: int = 100
 
 # ---------- Configs for Models ----------
 @dataclass
@@ -36,6 +31,7 @@ class HFStreamConfig:
     split: str = "train"
     streaming: bool = True
     batch_size: int = 64 # Overwritten by TrainerConfig
+    image_size: int = 512
     yield_partial_final: bool = False  # yield the last small batch
     max_concurrency: int = 32
     per_host_limit: int = 8
@@ -48,3 +44,11 @@ class HFStreamConfig:
     ttl_dns_cache: int = 300
     url_key: str = "URL"
     text_key: str = "TEXT"
+
+# ---------- Config Logging ----------
+def config_logging(level: str = "INFO"):
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%H:%M:%S"
+    )
