@@ -1,25 +1,69 @@
 # A-R-G-O-S (Work in progress...)
 
-## Overview  
-A-R-G-O-S is a research project aimed at solving **physical intelligence** by bridging **planning** and **actioning** through generative models and optimization.
+## Overview
 
-The approach consists of two main steps:  
-1. **Planning** – generating high-level trajectories of future states.
-2. **Actioning** – translating those trajectories into executable actions optimized at inference time.
+So many different ways to approach this, each lab throughout the world has different methods that each believe capable of true generalization if scaled up with the right data VLAs, LBHs, Physics Engines, World Models and more...
 
-All images are treated as **states**, represented as embeddings from **DINOv3**
+*Now, it is quite hard to predict which approach will win, but we can already predict that the winner will be the one having most data that it can learn from.*
 
-## Model Pipeline
-The world model is an auto-regressive generative model, conditioned on either text or actions.
-1. World Model predicts a trajectory of next states, conditioned on text, this becomes the **objective**.
-2. Use **CEM** algorithm and World Model conditioned on actions to optimize a trajectory of actions to be as close as possible to the **objective**.
+And knowing this, my project will aim at building a model, whatever it is, that is as efficient as possible to learn from the widest range possible of data.
+Out of my head, I am thinking of:
+- Images
+- Environment Videos
+- Human Videos
+    - All kind of camera angle
+    - Demonstration of task
+- Robot Video
+    - All kind of camera angle
+    - Demonstration of task
+- Other sensors
+    - Force/torque feedback
+    - Proprioception
+    - Audio
+    - Accelerometer
+    - Tactile
+    - Temperature, Wind speed
+- Text
+    - Task instructions
+    - Planning and reasoning
+- Simulation/Real Environment for continual learning, with trials and errors
+
+And I am probably missing some, but the goal is simple, learn the distribution of as much data and modality as we can.
+
+---
+
+**I have defined the objective, let's now dive into the technical plan.**
+
+Today, the most capable framework for learning from *multimodal* and *inherently stochastic* data is Diffusion/Flow matching, but other methods exist like Conditional VAE (used in the ACT) and energy-based models for example.
+
+However, this long list of possible learned data doesn't have same impact on the modeling of the world, I would safely say that image sensors are giving more information than Wind Speed for robotic automation.
+I will start my project by leveraging Images, Videos, Demonstrations Videos, Robot Demonstrations Videos, Task Instructions and Proprioception.
+
+Images -> Learning spatial information
+Videos -> Learning dynamic information
+Demonstrations Videos -> Learning behaviors information
+Robot Demonstrations Videos -> Learning behaviors information + proprioception information
+Task Instructions -> Learning the mapping from text to behavior
+
+Here is how I think about my model during inference:
+
+Encode images using Dinov3
+Encode text instructions using Dinov3 text encoder + CLIP + T5M
+Encode proprioception using simple MLP
+Flow matching DiT predict next step encoded data (image + proprioception)
+Decoder of proprioception to get actions.
+Decoder of imags (optional, for visualization purpose)
+
+Extremely simple. And I think it is very close to what Toyota Research Institute has published recently, [LBMs](https://arxiv.org/pdf/2504.02792), or another paper called [Video Generation as Robot policy](https://arxiv.org/pdf/2508.00795).
+
+---
 
 ## Model Architecure
 It is a DiT backbone with added cross-attention to:
 - Text tokens
 - Action tokens
 - Context tokens
-(Those are all optional)
+(Those are all trained with Classifier Free Guidance)
 
 ## Timeline
 1/ **Done**/ DINO encoder for image and text loaded from torch hub.

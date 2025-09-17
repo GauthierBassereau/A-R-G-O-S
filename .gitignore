@@ -67,3 +67,4 @@ archive/papers
 old/
 checkpoints/
 *.pt
+AGENTS.md
