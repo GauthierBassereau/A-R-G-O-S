@@ -2,59 +2,67 @@
 
 ## Overview
 
-So many different ways to approach this, each research lab throughout the world has different methods that each believe capable of true generalization if scaled up with the right data VLAs, LBHs, Physics Engines, World Models and more...
+There are so many different ways to approach this problem. Research labs around the world each have their own methods, all claiming to be scalable paths toward generalization: VLAs, LBHs, Physics Engines, World Models, and more...
 
-**Now, it is quite hard to predict which approach will win, but we can already predict that the winner will be the one having most data that it can learn from.**
+**It is difficult to predict which approach will ultimately succeed, but we can safely assume that the winning method will be the one capable of learning from the most diverse and abundant data.**
 
-And knowing this, my project will aim at building a model, whatever it is, that is as efficient as possible to learn from the widest range possible of data.
-Out of my head, I am thinking of:
-- Images
-- Environment Videos
-- Human Videos
-    - All kind of camera angle
-    - Demonstration of task
-- Robot Video
-    - All kind of camera angle
-    - Demonstration of task
-- Other sensors
-    - Force/torque feedback
-    - Proprioception
-    - Audio
-    - Accelerometer
-    - Tactile
-    - Temperature, Wind speed
-- Text
-    - Task instructions
-    - Planning and reasoning
-- Simulation/Real Environment for continual learning, with trials and errors
+With this in mind, my project will focus on building a model that can efficiently learn from the widest possible range of data. Off the top of my head, I’m thinking of:
 
-And I am probably missing some, but the goal is simple, learn the distribution of as much data and modality as we can.
+- Images  
+- Environment videos  
+- Human videos  
+  - Various camera angles  
+  - Task demonstrations  
+- Robot videos  
+  - Various camera angles  
+  - Robot task demonstrations  
+- Other sensors  
+  - Force/torque feedback  
+  - Proprioception  
+  - Audio  
+  - Accelerometer  
+  - Tactile feedback  
+  - Environmental (temperature, wind speed, etc.)  
+- Text  
+  - Task instructions  
+  - Planning and reasoning  
+- Simulation and real environments for continual learning through trial and error  
+
+I’m probably missing some modalities, but the goal remains simple: **learn the distribution of as much data and as many modalities as possible.**
 
 ---
 
-**I have defined the objective, let's now dive into the technical plan.**
+**Having defined the objective, let’s move to the technical plan.**
 
-Today, the most capable framework for learning from *multimodal* and *inherently stochastic* data is Diffusion/Flow matching, but other methods exist like Conditional VAE (used in the ACT) and energy-based models for example.
+Today, the most capable framework for learning from *multimodal* and *inherently stochastic* data is Diffusion / Flow Matching. Other methods exist, such as Conditional VAEs (used in ACT) or energy-based models, but diffusion currently seems best suited.
 
-However, this long list of possible learned data doesn't have same impact on the modeling of the world, I would safely say that image sensors are giving more information than Wind Speed for robotic automation.
-I will start my project by leveraging Images, Videos, Demonstrations Videos, Robot Demonstrations Videos, Task Instructions and Proprioception.
+Of course, not all modalities contribute equally to modeling the world. For example, image data provides far more useful information for robotic automation than wind speed. To start, I will focus on:
 
-Images -> Learning spatial information
-Videos -> Learning dynamic information
-Demonstrations Videos -> Learning behaviors information
-Robot Demonstrations Videos -> Learning behaviors information + proprioception information
-Task Instructions -> Learning the mapping from text to behavior
+- Images  
+- Videos  
+- Human demonstration videos  
+- Robot demonstration videos (with proprioception)  
+- Task instructions  
 
-Here is how I think about my model during inference:
+Here’s how each contributes:  
+- **Images** → capture spatial information  
+- **Videos** → capture dynamics over time  
+- **Human demonstration videos** → capture behavior patterns  
+- **Robot demonstration videos** → capture behavior + proprioception  
+- **Task instructions** → map natural language to behaviors  
 
-Encode images using Dinov3
-Encode text instructions using Dinov3 text encoder + CLIP + T5M
-Encode proprioception using simple MLP
-Flow matching DiT predict next step encoded data (image + proprioception)
-Decode of proprioception to get actions.
-Decode of images (optional, for visualization purpose)
+---
 
-Very simple idea. I think it is very close to what Toyota Research Institute has published recently, [LBMs](https://arxiv.org/pdf/2504.02792), or another paper called [Video Generation as Robot policy](https://arxiv.org/pdf/2508.00795), or another even more recent project from Unitree [unifolm-world-model-action](https://github.com/unitreerobotics/unifolm-world-model-action/tree/main)
+**Model at inference (current design):**
+
+- Encode images using **DINOv3**  
+- Encode text instructions using **DINOv3 text encoder**  
+- Encode proprioception using a simple **MLP**
+- Use a **Flow Matching DiT** to predict the next-step encoded data (image + proprioception)  
+- Decode proprioception to obtain actions  
+- Optionally decode images for visualization  
+
+This is a simple idea, and I believe it is close to what Toyota Research Institute recently published ([LBMs](https://arxiv.org/pdf/2504.02792)), or the paper [Video Generation as Robot Policy](https://arxiv.org/pdf/2508.00795), as well as Unitree’s more recent project [Unifolm-World-Model-Action](https://github.com/unitreerobotics/unifolm-world-model-action/tree/main).  
 
 ---
 
