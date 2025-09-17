@@ -51,24 +51,25 @@ Encode images using Dinov3
 Encode text instructions using Dinov3 text encoder + CLIP + T5M
 Encode proprioception using simple MLP
 Flow matching DiT predict next step encoded data (image + proprioception)
-Decoder of proprioception to get actions.
-Decoder of imags (optional, for visualization purpose)
+Decode of proprioception to get actions.
+Decode of images (optional, for visualization purpose)
 
-Extremely simple. And I think it is very close to what Toyota Research Institute has published recently, [LBMs](https://arxiv.org/pdf/2504.02792), or another paper called [Video Generation as Robot policy](https://arxiv.org/pdf/2508.00795).
+Very simple idea. I think it is very close to what Toyota Research Institute has published recently, [LBMs](https://arxiv.org/pdf/2504.02792), or another paper called [Video Generation as Robot policy](https://arxiv.org/pdf/2508.00795), or another even more recent project from Unitree [unifolm-world-model-action](https://github.com/unitreerobotics/unifolm-world-model-action/tree/main)
 
 ---
 
 ## Model Architecure
-It is a DiT backbone with added cross-attention to:
+Image Encoder: Dinov3, ViT Large
+World Model: DiT backbone with added cross-attention layer to:
 - Text tokens
 - Action tokens
 - Context tokens
-(Those are all trained with Classifier Free Guidance)
+*Trained with Classifier Free Guidance*
 
 ## Timeline
 - [x] DINO encoder for image and text loaded from torch hub.
 - [x] Create the Image and text pairs dataset streamed from huggingface
-- [ ] Train Decoder on Image dataset as an Auto-Encoder to be able to have visual interpretaion of futur predictions.
+- [x] Train Decoder on Image dataset as an Auto-Encoder to be able to have visual interpretaion of futur predictions.
 - [ ] Pre-train the flow matching Dit using the Image dataset. Exactly like a text to image generation model.
 - [ ] Create the video and instructions pairs dataset streamed from hugginface
 - [ ] Train the flow matching Dit using the Video dataset.
@@ -77,7 +78,7 @@ It is a DiT backbone with added cross-attention to:
 
 ---
 
-## Data to explore
+## Data to explore (need to do my research because there are much more than this)
 - **Task centric Robot Data:**
     - AGIBOTWORLD
     - Open X Embodiment
@@ -89,11 +90,10 @@ It is a DiT backbone with added cross-attention to:
 - **Raw videos of people doing things:**
     - HowTo100M
 
-## Current Version
+## POC Version
 - Take current state + instructions
 - Predict next 2 seconds of states, auto-regressively, taking the last generated state as input (Teacher Forcing)
-- Optimize actions to match the generated states
-- Do a POC with AGIBOTWORLD dataset for pre-training planning predictor and will use SO-100 dataset for action predictor and fine-tuning the planning predictor.
+- Do a POC with AGIBOTWORLD/DROID/Ego datasets for pre-training and will add/use-only SO-100 dataset for post-training.
 
 ## Improvements for next versions
 - Add history/memory -> adding past frames to the predictors
@@ -106,3 +106,19 @@ It is a DiT backbone with added cross-attention to:
     (4) Optimize actions to reach the intermediates states
 - Train the Action Predictor entirely in simulation with varying background -> showing that the action predictor can be train with almost no cost.
 - Replace Teacher Forcing by Self Forcing
+
+---
+# Current Results
+---
+
+## DINO encoder
+
+---
+
+## Laion-coco dataset streamed from huggingface
+
+---
+
+## Train Decoder 
+
+---
