@@ -4,7 +4,7 @@
 
 So many different ways to approach this, each lab throughout the world has different methods that each believe capable of true generalization if scaled up with the right data VLAs, LBHs, Physics Engines, World Models and more...
 
-*Now, it is quite hard to predict which approach will win, but we can already predict that the winner will be the one having most data that it can learn from.*
+**Now, it is quite hard to predict which approach will win, but we can already predict that the winner will be the one having most data that it can learn from.**
 
 And knowing this, my project will aim at building a model, whatever it is, that is as efficient as possible to learn from the widest range possible of data.
 Out of my head, I am thinking of:
@@ -66,14 +66,14 @@ It is a DiT backbone with added cross-attention to:
 (Those are all trained with Classifier Free Guidance)
 
 ## Timeline
-1/ **Done**/ DINO encoder for image and text loaded from torch hub.
-2/ **Done** / Create the Image and text pairs dataset streamed from huggingface
-5/ **Todo** / Train Decoder on Image dataset as an Auto-Encoder to be able to have visual interpretaion of futur predictions.
-6/**Todo** / Pre-train the flow matching Dit using the Image dataset. Exactly like a text to image generation model.
-7/**Todo** / Create the video and instructions pairs dataset streamed from hugginface
-8/**Todo** / Train the flow matching Dit using the Video dataset.
-9/**Todo** / Create the video and actions pairs dataset, streamed from hugginface
-10/**Todo** / Continue flow matching DiT training by adding action modality too.
+- [x] DINO encoder for image and text loaded from torch hub.
+- [x] Create the Image and text pairs dataset streamed from huggingface
+- [ ] Train Decoder on Image dataset as an Auto-Encoder to be able to have visual interpretaion of futur predictions.
+- [ ] Pre-train the flow matching Dit using the Image dataset. Exactly like a text to image generation model.
+- [ ] Create the video and instructions pairs dataset streamed from hugginface
+- [ ] Train the flow matching Dit using the Video dataset.
+- [ ] Create the video and actions pairs dataset, streamed from hugginface
+- [ ] Continue flow matching DiT training by adding action modality too.
 
 ---
 
