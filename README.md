@@ -2,7 +2,7 @@
 
 ## Overview
 
-So many different ways to approach this, each lab throughout the world has different methods that each believe capable of true generalization if scaled up with the right data VLAs, LBHs, Physics Engines, World Models and more...
+So many different ways to approach this, each research lab throughout the world has different methods that each believe capable of true generalization if scaled up with the right data VLAs, LBHs, Physics Engines, World Models and more...
 
 **Now, it is quite hard to predict which approach will win, but we can already predict that the winner will be the one having most data that it can learn from.**
 
@@ -66,7 +66,7 @@ World Model: DiT backbone with added cross-attention layer to:
 - Context tokens
 *Trained with Classifier Free Guidance*
 
-## Timeline
+## Task List
 - [x] DINO encoder for image and text loaded from torch hub.
 - [x] Create the Image and text pairs dataset streamed from huggingface
 - [x] Train Decoder on Image dataset as an Auto-Encoder to be able to have visual interpretaion of futur predictions.
