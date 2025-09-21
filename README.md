@@ -13,8 +13,6 @@ My project, **A-R-G-O-S**, aims to do exactly this. The goal is to build a syste
 2. **Separate planning from control**, with a high-level world model for planning and a robust low-level controller for executing motor commands.  
 3. **Leverage both web-scale pretraining and simulation**.  
 
----
-
 ## Core Idea: Planning vs Control  
 
 The key design choice:  
@@ -71,8 +69,6 @@ This separation provides two major benefits:
   - Phase 2: Large-scale simulated training with randomized backgrounds, environments, and dynamics.  
   - Phase 3: Continual learning (online adaptation).  
 
----
-
 ## Task List  
 
 - [x] DINO encoder for image and text (Torch Hub).  
@@ -86,7 +82,7 @@ This separation provides two major benefits:
 ---
 
 ## Data to Explore  
-
+(Need to do more research on this)
 **Task-Centric Robot Data:**  
 - AGIBOTWORLD  
 - Open X Embodiment  
@@ -96,9 +92,8 @@ This separation provides two major benefits:
 - BridgeData V2, Egodex, RoboVQA, HoloAssist, Ego4D  
 
 **Human / General Videos:**  
-- HowTo100M  
-
----
+- HowTo100M
+- Large scale video datasets, Kinematics etc...
 
 ## Proof of Concept (POC)  
 
@@ -106,8 +101,6 @@ This separation provides two major benefits:
 - Planner: Predict next 2 seconds of latent states, auto-regressively (teacher forcing).  
 - Controller: Use planned next state to generate torques.  
 - Data: Start with AGIBOTWORLD/DROID/Ego datasets for pretraining; specialize with SO-100 for fine-tuning.  
-
----
 
 ## Roadmap for Improvements  
 
