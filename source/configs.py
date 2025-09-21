@@ -25,6 +25,26 @@ class ImageDecoderTransposeConfig:
     device: Optional[str] = None
     dtype: Optional[torch.dtype] = None
     
+@dataclass
+class WorldModelFMConfig:
+    input_dim: int = 1024
+    latent_dim: int = 1024
+    depth: int = 12
+    num_heads: int = 16
+    mlp_ratio: float = 4.0
+    time_embed_dim: int = 256
+    time_cond_dim: int = 1024
+    attention_dropout: float = 0.0
+    cross_attention_dropout: float = 0.0
+    mlp_dropout: float = 0.0
+    text_context_dim: int = 1024
+    history_context_dim: int = 1024
+    use_history_rope: bool = True
+    history_rope_base: float = 10000.0
+    condition_use_gate: bool = True
+    device: Optional[str] = None
+    dtype: Optional[torch.dtype] = None
+    
 # ---------- Configs for DatasetStream ----------
 @dataclass
 class HFStreamConfig:
