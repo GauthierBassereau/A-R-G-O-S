@@ -63,7 +63,7 @@ This separation provides two major benefits:
   - Small history window of past states  
   - Target next state (from planner)  
 - **Outputs**  
-  - Joint torques directly.  
+  - Motor torques
 - **Training**  
   - Phase 1: Imitation learning (robot demos).  
   - Phase 2: Large-scale simulated training with randomized backgrounds, environments, and dynamics.  
@@ -105,16 +105,13 @@ This separation provides two major benefits:
 ## Roadmap for Improvements  
 
 - **History / Memory**  
-  - Relative position embeddings.  
   - Memory bank / PCA filtering of redundant tokens (see *DINO Foresight*).  
 
 - **Hierarchical Planning**  
   - (1) Predict Goal Image.  
-  - (2) Generate intermediate states bridging current → goal.  
-  - (3) Optimize actions to reach them.  
-
-- **Simulation for Controller**  
-  - Train entirely in randomized simulated environments for robustness.  
+  - (2) Generate intermediate states bridging current → closest goal.  
+  - (3) Redo (2) until next goal is at a certain threshold from the current state.
+  -> This could enable more efficient and better planning generation
 
 - **Self-Forcing**  
   - Replace teacher forcing with self-forcing for long-horizon rollouts.  
