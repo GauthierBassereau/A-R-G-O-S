@@ -80,10 +80,8 @@ This separation provides two major benefits:
 - [x] Train Image Decoder as Auto-Encoder (latent visualization).  
 - [ ] Pre-train Flow Matching DiT on Image dataset (text-to-image style).  
 - [ ] Create Video–Instruction dataset (HuggingFace).  
-- [ ] Train Flow Matching DiT on video data.  
-- [ ] Extend to Video–Action dataset (robot demos).  
-- [ ] Add Proprioception and Action modality to planner.  
-- [ ] Design & train Low-Level Controller (first imitation, then sim, then online).  
+- [ ] Train Flow Matching DiT on video data.
+- Design & train Low-Level Controller (first imitation, then sim, then online). -> will detail this later.
 
 ---
 
