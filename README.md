@@ -1,132 +1,129 @@
 # A-R-G-O-S (Work in progress...)
 
-## Overview
+## Overview  
 
-There are so many different ways to approach this problem. Research labs around the world each have their own methods, all claiming to be scalable paths toward generalization: VLAs, LBHs, Physics Engines, World Models, and more...
+Research labs worldwide are exploring different paths toward generalization in robotics and AI: **VLAs, LBHs, Physics Engines, World Models, Diffusion Policies**, and more.  
 
-**It is difficult to predict which approach will ultimately succeed, but we can safely assume that the winning method will be the one capable of learning from the most diverse and abundant data.**
+It is difficult to predict which approach will ultimately succeed, but a safe assumption is:  
+**the winning method will be the one capable of learning from the widest variety of modalities, at scale.**
 
-With this in mind, my project will focus on building a model that can efficiently learn from the widest possible range of data. Off the top of my head, I’m thinking of:
+My project, **A-R-G-O-S**, aims to do exactly this. The goal is to build a system that can:  
 
-- Images  
-- Environment videos  
-- Human videos  
-  - Various camera angles  
-  - Task demonstrations  
-- Robot videos  
-  - Various camera angles  
-  - Robot task demonstrations  
-- Other sensors  
-  - Force/torque feedback  
-  - Proprioception  
-  - Audio  
-  - Accelerometer  
-  - Tactile feedback  
-  - Environmental (temperature, wind speed, etc.)  
-- Text  
-  - Task instructions  
-  - Planning and reasoning  
-- Simulation and real environments for continual learning through trial and error  
-
-I’m probably missing some modalities, but the goal remains simple: **learn the distribution of as much data and as many modalities as possible.**
+1. **Learn from large-scale, multimodal data** (vision, demonstrations, text, proprioception, etc.).  
+2. **Separate planning from control**, with a high-level world model for planning and a robust low-level controller for executing motor commands.  
+3. **Leverage both web-scale pretraining and simulation**.  
 
 ---
 
-**Having defined the objective, let’s move to the technical plan.**
+## Core Idea: Planning vs Control  
 
-Today, the most capable framework for learning from *multimodal* and *inherently stochastic* data is Diffusion / Flow Matching. Other methods exist, such as Conditional VAEs (used in ACT) or energy-based models, but diffusion currently seems best suited.
+The key design choice:  
+- **Planning World Model (Low Frequency)**  
+  - Operates on **latent representations** (e.g., DINOv3 embeddings).  
+  - Predicts **future observations** (mainly vision + proprioception latents).  
+  - Plans at a **lower frequency** (e.g., ~800 ms between states).  
+  - Learns from **web-scale multimodal data**: human videos, robot demonstrations, text instructions, task-centric datasets.  
+  - Output: a sequence of **future target states** in latent space.  
 
-Of course, not all modalities contribute equally to modeling the world. For example, image data provides far more useful information for robotic automation than wind speed. To start, I will focus on:
+- **Low-Level Controller (High Frequency)**  
+  - Operates directly on **current state**, a short **history of past states**, and the **next target state** predicted by the planner.  
+  - Runs at **much higher frequency** (robot control loop, e.g., 50–500 Hz).  
+  - Outputs **motor torques** directly.  
+  - Training:  
+    - **Imitation learning** from demonstrations.  
+    - **Massive scale simulation** for robustness and adaptation.  
+    - **Potential continual learning** (unsolved, but core ambition).  
+  - Analogy: similar to controllers used for humanoid locomotion policies (robust low-level reflex-like behavior).  
 
-- Images  
-- Videos  
-- Human demonstration videos  
-- Robot demonstration videos (with proprioception)  
-- Task instructions  
-
-Here’s how each contributes:  
-- **Images** → capture spatial information  
-- **Videos** → capture dynamics over time  
-- **Human demonstration videos** → capture behavior patterns  
-- **Robot demonstration videos** → capture behavior + proprioception  
-- **Task instructions** → map natural language to behaviors  
-
----
-
-**Model at inference (current design):**
-
-- Encode images using **DINOv3**  
-- Encode text instructions using **DINOv3 text encoder**  
-- Encode proprioception using a simple **MLP**
-- Use a **Flow Matching DiT** to predict the next-step encoded data (image + proprioception)  
-- Decode proprioception to obtain actions  
-- Optionally decode images for visualization  
-
-This is a simple idea, and I believe it is close to what Toyota Research Institute recently published ([LBMs](https://arxiv.org/pdf/2504.02792)), or the paper [Video Generation as Robot Policy](https://arxiv.org/pdf/2508.00795), as well as Unitree’s more recent project [Unifolm-World-Model-Action](https://github.com/unitreerobotics/unifolm-world-model-action/tree/main).  
+This separation provides two major benefits:  
+1. **Scalability** – Planning leverages abundant web-scale data, while the controller focuses on domain-specific motor control.  
+2. **Robustness** – The controller can generalize in varied environments, while the planner generalizes across tasks and modalities.  
 
 ---
 
-## Model Architecure
-Image Encoder: Dinov3, ViT Large
-World Model: DiT backbone with added cross-attention layer to:
-- Text tokens
-- Action tokens
-- Context tokens
-*Trained with Classifier Free Guidance*
+## Technical Plan  
 
-## Task List
-- [x] DINO encoder for image and text loaded from torch hub.
-- [x] Create the Image and text pairs dataset streamed from huggingface
-- [x] Train Decoder on Image dataset as an Auto-Encoder to be able to have visual interpretaion of futur predictions.
-- [ ] Pre-train the flow matching Dit using the Image dataset. Exactly like a text to image generation model.
-- [ ] Create the video and instructions pairs dataset streamed from hugginface
-- [ ] Train the flow matching Dit using the Video dataset.
-- [ ] Create the video and actions pairs dataset, streamed from hugginface
-- [ ] Continue flow matching DiT training by adding action modality too.
+### Planning World Model  
+- **Encoder**  
+  - Images: **DINOv3** (ViT-Large)  
+  - Text: **DINOv3 text encoder**  
+  - Proprioception: **MLP**  
+- **World Model**  
+  - **Flow Matching DiT backbone**  
+  - Cross-attention on:  
+    - Text tokens  
+    - Action tokens  
+    - Context tokens  
+  - **Classifier-Free Guidance** training  
+- **Outputs**  
+  - Predicts next **latent observation** (vision + proprioception).  
+  - Can decode latent vision for visualization.  
 
----
-
-## Data to explore (need to do my research because there are much more than this)
-- **Task centric Robot Data:**
-    - AGIBOTWORLD
-    - Open X Embodiment
-    - Droid
-    - RobotMind
-    - SO100 Community
-    - BridgeData V2, Egodex, RoboVQA, HoloAssist, Ego4D
-
-- **Raw videos of people doing things:**
-    - HowTo100M
-
-## POC Version
-- Take current state + instructions
-- Predict next 2 seconds of states, auto-regressively, taking the last generated state as input (Teacher Forcing)
-- Do a POC with AGIBOTWORLD/DROID/Ego datasets for pre-training and will add/use-only SO-100 dataset for post-training.
-
-## Improvements for next versions
-- Add history/memory -> adding past frames to the predictors
-    - Use relative position embedding.
-    - Use some kind of memory bank that gets updated when a new token doesn't match anything in the memory bank / Use PCA to get rid of uselss tokens (see DINO Foresight)
-- Generate the plan on mutiple scale
-    (1) Goal Image
-    (2) Generate one intermediate step bewteen current state and Goal Image
-    (3) Redo (2) X times
-    (4) Optimize actions to reach the intermediates states
-- Train the Action Predictor entirely in simulation with varying background -> showing that the action predictor can be train with almost no cost.
-- Replace Teacher Forcing by Self Forcing
-
----
-# Current Results
----
-
-## DINO encoder
+### Low-Level Controller  
+- **Inputs**  
+  - Current state (vision + proprioception)  
+  - Small history window of past states  
+  - Target next state (from planner)  
+- **Outputs**  
+  - Joint torques directly.  
+- **Training**  
+  - Phase 1: Imitation learning (robot demos).  
+  - Phase 2: Large-scale simulated training with randomized backgrounds, environments, and dynamics.  
+  - Phase 3: Continual learning (online adaptation).  
 
 ---
 
-## Laion-coco dataset streamed from huggingface
+## Task List  
+
+- [x] DINO encoder for image and text (Torch Hub).  
+- [x] Image–text dataset (HuggingFace streaming).  
+- [x] Train Image Decoder as Auto-Encoder (latent visualization).  
+- [ ] Pre-train Flow Matching DiT on Image dataset (text-to-image style).  
+- [ ] Create Video–Instruction dataset (HuggingFace).  
+- [ ] Train Flow Matching DiT on video data.  
+- [ ] Extend to Video–Action dataset (robot demos).  
+- [ ] Add Proprioception and Action modality to planner.  
+- [ ] Design & train Low-Level Controller (first imitation, then sim, then online).  
 
 ---
 
-## Train Decoder 
+## Data to Explore  
+
+**Task-Centric Robot Data:**  
+- AGIBOTWORLD  
+- Open X Embodiment  
+- DROID  
+- RobotMind  
+- SO100 Community  
+- BridgeData V2, Egodex, RoboVQA, HoloAssist, Ego4D  
+
+**Human / General Videos:**  
+- HowTo100M  
 
 ---
+
+## Proof of Concept (POC)  
+
+- Input: Current state + text instructions.  
+- Planner: Predict next 2 seconds of latent states, auto-regressively (teacher forcing).  
+- Controller: Use planned next state to generate torques.  
+- Data: Start with AGIBOTWORLD/DROID/Ego datasets for pretraining; specialize with SO-100 for fine-tuning.  
+
+---
+
+## Roadmap for Improvements  
+
+- **History / Memory**  
+  - Relative position embeddings.  
+  - Memory bank / PCA filtering of redundant tokens (see *DINO Foresight*).  
+
+- **Hierarchical Planning**  
+  - (1) Predict Goal Image.  
+  - (2) Generate intermediate states bridging current → goal.  
+  - (3) Optimize actions to reach them.  
+
+- **Simulation for Controller**  
+  - Train entirely in randomized simulated environments for robustness.  
+
+- **Self-Forcing**  
+  - Replace teacher forcing with self-forcing for long-horizon rollouts.  
