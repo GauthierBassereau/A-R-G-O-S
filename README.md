@@ -1,7 +1,5 @@
 # A-R-G-O-S (Work in progress...)
 
-## Overview  
-
 Research labs worldwide are exploring different paths toward generalization in robotics and AI: **VLAs, LBHs, Physics Engines, World Models, Diffusion Policies**, and more.  
 
 It is difficult to predict which approach will ultimately succeed, but a safe assumption is:  
