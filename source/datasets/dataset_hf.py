@@ -1,13 +1,17 @@
 import asyncio
 import io
-from typing import AsyncGenerator, Dict, Any, Optional, Tuple, List, Iterator
+import logging
+from typing import Any, AsyncGenerator, Dict, Iterator, List, Optional, Tuple
+
 import aiohttp
 from datasets import load_dataset
 from PIL import Image
 import torch
 from torchvision import transforms
+
 from source.configs import HFStreamConfig
-import logging
+from source.models.image_encoder_dinov3 import ImageEncoderDinov3
+from source.models.text_encoder_dinov3 import TextEncoderDinov3
 
 log = logging.getLogger(__name__)
 
@@ -17,8 +21,10 @@ class HFAsyncImageDataLoader:
     applies a transform, and yields dict batches:
         {
           "images": FloatTensor [B, C, H, W],
-          "texts":  List[str],
-          "urls":   List[str],
+          "texts":  list[str],
+          "urls":   list[str],
+          "image_embeddings": dict[str, Tensor] (optional),
+          "text_embeddings": Tensor (optional),
         }
     """
     def __init__(
@@ -40,8 +46,14 @@ class HFAsyncImageDataLoader:
         url_key: str = "URL",
         text_key: str = "TEXT",
         transform=None,
+        encode_images: bool = False,
+        encode_texts: bool = False,
+        image_encoder_device: Optional[str] = None,
+        text_encoder_device: Optional[str] = None,
+        image_encoder_text_head: bool = True,
+        image_encoder_normalize: bool = True,
+        text_encoder_normalize: bool = True,
     ):
-        # store config values
         self.hf_dataset = hf_dataset
         self.split = split
         self.streaming = streaming
@@ -60,6 +72,18 @@ class HFAsyncImageDataLoader:
         self.text_key = text_key
 
         self.transform = transform
+        self.encode_images = encode_images
+        self.encode_texts = encode_texts
+        self.image_encoder_device_spec = image_encoder_device
+        self.text_encoder_device_spec = text_encoder_device
+        self.image_encoder_text_head = image_encoder_text_head
+        self.image_encoder_normalize = image_encoder_normalize
+        self.text_encoder_normalize = text_encoder_normalize
+
+        self._image_encoder: Optional[ImageEncoderDinov3] = None
+        self._image_encoder_device: Optional[torch.device] = None
+        self._text_encoder: Optional[TextEncoderDinov3] = None
+        self._text_encoder_device: Optional[torch.device] = None
 
         ds = load_dataset(
             self.hf_dataset,
@@ -69,8 +93,8 @@ class HFAsyncImageDataLoader:
         self.ds_iter = iter(ds)
 
     @classmethod
-    def from_config(cls, cfg: HFStreamConfig, transform=None, ds_iter=None):
-        """Construct from a HFStreamConfig instance, mirroring ImageDecoderTranspose style."""
+    def from_config(cls, cfg: HFStreamConfig):
+        """Construct from a HFStreamConfig instance, allowing transform via config."""
         return cls(
             hf_dataset=cfg.hf_dataset,
             split=cfg.split,
@@ -88,10 +112,85 @@ class HFAsyncImageDataLoader:
             ttl_dns_cache=cfg.ttl_dns_cache,
             url_key=cfg.url_key,
             text_key=cfg.text_key,
-            transform=transform,
+            transform=cfg.transform,
+            encode_images=cfg.encode_images,
+            encode_texts=cfg.encode_texts,
+            image_encoder_device=cfg.image_encoder_device,
+            text_encoder_device=cfg.text_encoder_device,
+            image_encoder_text_head=cfg.image_encoder_text_head,
+            image_encoder_normalize=cfg.image_encoder_normalize,
+            text_encoder_normalize=cfg.text_encoder_normalize,
         )
 
     # ---- internal async helpers ----
+
+    def _resolve_device(self, device_spec: Optional[str]) -> torch.device:
+        target = device_spec or "cpu"
+        device = torch.device(target)
+
+        if device.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("Requested CUDA device but CUDA is not available")
+        if device.type == "mps":
+            mps_available = getattr(torch.backends, "mps", None)
+            if not (mps_available and torch.backends.mps.is_available()):
+                raise RuntimeError("Requested MPS device but MPS backend is not available")
+        return device
+
+    def _ensure_image_encoder(self) -> ImageEncoderDinov3:
+        if self._image_encoder is None:
+            encoder = ImageEncoderDinov3().eval()
+            device = self._resolve_device(self.image_encoder_device_spec)
+            encoder.to(device)
+            self._image_encoder = encoder
+            self._image_encoder_device = device
+        return self._image_encoder
+
+    def _ensure_text_encoder(self) -> TextEncoderDinov3:
+        if self._text_encoder is None:
+            encoder = TextEncoderDinov3().eval()
+            device = self._resolve_device(self.text_encoder_device_spec)
+            encoder.to(device)
+            self._text_encoder = encoder
+            self._text_encoder_device = device
+        return self._text_encoder
+
+    def _encode_images(self, images: torch.Tensor) -> Dict[str, torch.Tensor]:
+        encoder = self._ensure_image_encoder()
+        assert self._image_encoder_device is not None
+        images_device = images.to(self._image_encoder_device, non_blocking=True)
+        with torch.inference_mode():
+            features = encoder(
+                images_device,
+                text_head=self.image_encoder_text_head,
+                normalize=self.image_encoder_normalize,
+            )
+        return features
+
+    def _encode_texts(self, texts: List[str]) -> torch.Tensor:
+        encoder = self._ensure_text_encoder()
+        with torch.inference_mode():
+            return encoder(texts, normalize=self.text_encoder_normalize)
+
+    def _assemble_batch(
+        self,
+        batch_imgs: List[torch.Tensor],
+        batch_texts: List[str],
+        batch_urls: List[str],
+    ) -> Dict[str, Any]:
+        images = torch.stack(batch_imgs, dim=0)
+        batch: Dict[str, Any] = {
+            "images": images,
+            "texts": batch_texts,
+            "urls": batch_urls,
+        }
+
+        if self.encode_images:
+            batch["image_embeddings"] = self._encode_images(images)
+
+        if self.encode_texts:
+            batch["text_embeddings"] = self._encode_texts(batch_texts)
+
+        return batch
 
     async def _fetch_image(
         self,
@@ -198,11 +297,7 @@ class HFAsyncImageDataLoader:
                         batch_urls.append(url)
 
                         if len(batch_imgs) == self.batch_size:
-                            yield {
-                                "images": torch.stack(batch_imgs, dim=0),
-                                "texts": batch_texts,
-                                "urls": batch_urls,
-                            }
+                            yield self._assemble_batch(batch_imgs, batch_texts, batch_urls)
                             batch_imgs, batch_texts, batch_urls = [], [], []
 
                     # Refill pipeline
@@ -210,11 +305,7 @@ class HFAsyncImageDataLoader:
 
             # Final partial batch
             if batch_imgs and self.yield_partial_final:
-                yield {
-                    "images": torch.stack(batch_imgs, dim=0),
-                    "texts": batch_texts,
-                    "urls": batch_urls,
-                }
+                yield self._assemble_batch(batch_imgs, batch_texts, batch_urls)
         log.info("Finished streaming all images.")
 
     # ---- public sync iterator ----
@@ -242,7 +333,8 @@ if __name__ == "__main__":
     from source.utils.utils import debug_show_img
     logging.basicConfig(level=logging.INFO)
     cfg = HFStreamConfig()
-    loader = HFAsyncImageDataLoader.from_config(cfg, transform=make_transform(cfg.image_size))
+    cfg.transform = make_transform(cfg.image_size)
+    loader = HFAsyncImageDataLoader.from_config(cfg)
     for batch in loader:
         imgs = batch["images"]  # [B, C, H, W]
         texts = batch["texts"]  # list[str]

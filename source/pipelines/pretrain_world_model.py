@@ -1,7 +1,6 @@
 import logging
 from pathlib import Path
 from typing import Optional, Sequence, Tuple
-
 import torch
 import wandb
 
@@ -26,12 +25,10 @@ log = logging.getLogger(__name__)
 
 
 def _prepare_text_condition(
+    text_encoder: TextEncoderDinov3,
     texts: Sequence[str],
     device: torch.device,
     dropout_prob: float,
-    *,
-    text_encoder: Optional[TextEncoderDinov3] = None,
-    precomputed_features: Optional[torch.Tensor] = None,
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], torch.Tensor]:
     """Encode texts and apply classifier-free guidance dropout."""
 
@@ -41,17 +38,11 @@ def _prepare_text_condition(
         return None, None, keep_mask
 
     cleaned_texts = [text if isinstance(text, str) else "" for text in texts]
-    if precomputed_features is None:
-        if text_encoder is None:
-            raise ValueError("text_encoder is required when precomputed_features is None")
-        with torch.inference_mode():
-            text_features = text_encoder(cleaned_texts, normalize=True)
-    else:
-        text_features = precomputed_features
+    with torch.inference_mode():
+        text_features = text_encoder(cleaned_texts, normalize=True)
 
     text_features = text_features.to(device=device)
-    if text_features.dim() == 2:
-        text_features = text_features.unsqueeze(1)  # (B, 1, D)
+    text_features = text_features.unsqueeze(1)  # (B, 1, D)
 
     has_text = torch.tensor(
         [bool(txt.strip()) for txt in cleaned_texts],
@@ -77,12 +68,7 @@ def _tensor_to_image(tensor: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
 
 
 trainer_cfg = PretrainWorldModelConfig()
-dataset_cfg = HFStreamConfig(
-    batch_size=trainer_cfg.batch_size,
-    encode_in_loader=trainer_cfg.dataloader_encode,
-    encoder_devices=trainer_cfg.dataloader_encoder_devices,
-    encoder_prefetch_batches=trainer_cfg.dataloader_prefetch_batches,
-)
+dataset_cfg = HFStreamConfig(batch_size=trainer_cfg.batch_size)
 world_model_cfg = WorldModelFMConfig(device=trainer_cfg.device)
 image_decoder_cfg = ImageDecoderTransposeConfig()
 
@@ -94,12 +80,7 @@ dataset_loader = HFAsyncImageDataLoader.from_config(
     transform=make_transform(dataset_cfg.image_size),
 )
 
-use_loader_encoding = dataset_cfg.encode_in_loader
-
-image_encoder: Optional[ImageEncoderDinov3] = None
-if not use_loader_encoding:
-    image_encoder = ImageEncoderDinov3().to(device).eval()
-
+image_encoder = ImageEncoderDinov3().to(device).eval()
 text_encoder = TextEncoderDinov3().to(device).eval()
 world_model = WorldModelFM.from_config(world_model_cfg).to(device).train()
 image_decoder = ImageDecoderTranspose.from_config(image_decoder_cfg).to(device).eval()
@@ -111,9 +92,8 @@ rectified_flow = RectifiedFlow(
     default_sample_steps=trainer_cfg.rectified_flow_sample_steps,
 )
 
-if image_encoder is not None:
-    for param in image_encoder.parameters():
-        param.requires_grad_(False)
+for param in image_encoder.parameters():
+    param.requires_grad_(False)
 for param in text_encoder.parameters():
     param.requires_grad_(False)
 for param in image_decoder.parameters():
@@ -182,24 +162,17 @@ for batch in dataset_loader:
     images = batch["images"].to(device, non_blocking=True)
     texts = batch["texts"]
 
-    preencoded_embeddings = batch.get("image_patch_backbone")
+    with torch.inference_mode():
+        encoded = image_encoder(images, text_head=False, normalize=False)
+        clean_embeddings = encoded["patch_backbone"].detach()
 
-    if preencoded_embeddings is not None:
-        clean_embeddings = preencoded_embeddings.to(device, non_blocking=True)
-    else:
-        if image_encoder is None:
-            raise RuntimeError("image_encoder is not initialised but batch lacks pre-encoded features")
-        with torch.inference_mode():
-            encoded = image_encoder(images, text_head=False, normalize=False)
-            clean_embeddings = encoded["patch_backbone"].detach().to(device)
+    clean_embeddings = clean_embeddings.to(device)
 
-    precomputed_text_features = batch.get("text_features")
     text_tokens, text_mask, keep_mask = _prepare_text_condition(
+        text_encoder=text_encoder,
         texts=texts,
         device=device,
         dropout_prob=trainer_cfg.text_dropout_prob,
-        text_encoder=None if precomputed_text_features is not None else text_encoder,
-        precomputed_features=precomputed_text_features,
     )
 
     loss, flow_state = rectified_flow.compute_loss(
@@ -229,10 +202,10 @@ for batch in dataset_loader:
         sample_text = texts[0] if texts else ""
         with torch.no_grad():
             sample_tokens, sample_mask, _ = _prepare_text_condition(
+                text_encoder=text_encoder,
                 texts=[sample_text],
                 device=device,
                 dropout_prob=0.0,
-                text_encoder=text_encoder,
             )
             sampled_latents = rectified_flow.sample(
                 batch_size=1,

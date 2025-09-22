@@ -12,7 +12,6 @@ from source.configs import (
 )
 from source.datasets.dataset_hf import HFAsyncImageDataLoader
 from source.models.image_decoder_transpose import ImageDecoderTranspose
-from source.models.image_encoder_dinov3 import ImageEncoderDinov3
 from source.utils.image_transforms import make_transform, IMAGENET_MEAN, IMAGENET_STD
 from source.utils.utils import collect_configs
 
@@ -20,14 +19,15 @@ config_logging("INFO")
 log = logging.getLogger(__name__)
 
 trainer_cfg = TrainDecoderConfig()
-dataset_cfg = HFStreamConfig(batch_size=trainer_cfg.batch_size)
+dataset_cfg = HFStreamConfig(
+    batch_size=trainer_cfg.batch_size,
+    encode_images=True,
+    image_encoder_text_head=False,
+)
+dataset_cfg.transform = make_transform(dataset_cfg.image_size)
 image_decoder_cfg = ImageDecoderTransposeConfig()
 
-dataset_loader = HFAsyncImageDataLoader.from_config(
-    dataset_cfg,
-    transform=make_transform(dataset_cfg.image_size),
-)
-encoder = ImageEncoderDinov3().to(trainer_cfg.device).eval()
+dataset_loader = HFAsyncImageDataLoader.from_config(dataset_cfg)
 decoder = ImageDecoderTranspose.from_config(image_decoder_cfg).to(trainer_cfg.device).train()
 
 criterion = torch.nn.MSELoss()
@@ -50,7 +50,7 @@ wandb.init(
 mean = torch.tensor(IMAGENET_MEAN, device=trainer_cfg.device).view(1,3,1,1)
 std = torch.tensor(IMAGENET_STD, device=trainer_cfg.device).view(1,3,1,1)
 
-checkpoint_dir = Path(trainer_cfg.checkpoint_dir)
+checkpoint_dir = Path("checkpoints")
 checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
 accum_steps = trainer_cfg.gradient_accumulation_steps
@@ -62,11 +62,8 @@ optim.zero_grad()
 
 for batch in dataset_loader:
     images = batch["images"].to(trainer_cfg.device)
-    
-    with torch.inference_mode():
-        enc_out = encoder(images, text_head=False, normalize=True)    
-        
-    feats = enc_out["patch_backbone"].clone()
+    image_embeddings = batch["image_embeddings"]
+    feats = image_embeddings["patch_backbone"].to(trainer_cfg.device).clone()
     recons = decoder(feats)
 
     loss = criterion(recons, images)

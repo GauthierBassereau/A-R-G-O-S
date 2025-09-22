@@ -1,12 +1,12 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 import torch
 
 # ---------- Configs for Pipelines ----------
 @dataclass
 class TrainDecoderConfig:
-    device: str = "cuda"
+    device: str = "cuda:1"
     learning_rate: float = 3e-4
     batch_size: int = 10
     gradient_accumulation_steps: int = 3
@@ -86,6 +86,14 @@ class HFStreamConfig:
     ttl_dns_cache: int = 300
     url_key: str = "URL"
     text_key: str = "TEXT"
+    encode_images: bool = False
+    encode_texts: bool = False
+    image_encoder_device: Optional[str] = "cuda:0"
+    text_encoder_device: Optional[str] = "cuda:0"
+    image_encoder_text_head: bool = True
+    image_encoder_normalize: bool = True
+    text_encoder_normalize: bool = True
+    transform: Optional[Callable[[Any], torch.Tensor]] = None
 
 # ---------- Config Logging ----------
 def config_logging(level: str = "INFO"):
