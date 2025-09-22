@@ -13,8 +13,6 @@ My project, **A-R-G-O-S**, aims to do exactly this. The goal is to build a syste
 2. **Separate planning from control**, with a high-level world model for planning and a robust low-level controller for executing motor commands.  
 3. **Leverage both web-scale pretraining and simulation**.  
 
-![Robotic System](archive/images/excalidraw.png)
-
 ## Core Idea: Planning vs Control  
 
 The key design choice:  
@@ -38,6 +36,8 @@ The key design choice:
 This separation provides two major benefits:  
 1. **Scalability** – Planning leverages abundant web-scale data, while the controller focuses on domain-specific motor control.  
 2. **Robustness** – The controller can generalize in varied environments, while the planner generalizes across tasks and modalities.  
+
+![Robotic System](archive/images/excalidraw.png)
 
 ---
 
