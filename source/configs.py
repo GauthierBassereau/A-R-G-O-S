@@ -1,18 +1,38 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 import torch
 
 # ---------- Configs for Pipelines ----------
 @dataclass
-class TrainerConfig:
+class TrainDecoderConfig:
     device: str = "cuda"
     learning_rate: float = 3e-4
     batch_size: int = 10
     gradient_accumulation_steps: int = 3
-    checkpoint_dir: str = "checkpoints"
     checkpoint_frequency: int = 1000
     image_log_frequency: int = 100
+
+
+@dataclass
+class PretrainWorldModelConfig:
+    device: str = "cuda"
+    learning_rate: float = 2e-4
+    batch_size: int = 1
+    gradient_accumulation_steps: int = 1
+    text_dropout_prob: float = 0.5
+    checkpoint_frequency: int = 1000
+    log_frequency: int = 250
+    adam_betas: Tuple[float, float] = (0.9, 0.999)
+    weight_decay: float = 0.01
+    max_steps: int = 100000
+    cfg_log_scale: float = 4.0
+    checkpoint_dir: str = "checkpoints/world_model"
+    decoder_checkpoint_path: Optional[str] = None
+    image_log_frequency: int = 1000
+    rectified_flow_sample_steps: int = 50
+    rectified_flow_logit_normal_sampling_t: bool = True
+    rectified_flow_predict_velocity: bool = True
 
 # ---------- Configs for Models ----------
 @dataclass
@@ -32,6 +52,7 @@ class WorldModelFMConfig:
     depth: int = 12
     num_heads: int = 16
     mlp_ratio: float = 4.0
+    num_register_tokens: int = 4
     time_embed_dim: int = 256
     time_cond_dim: int = 1024
     attention_dropout: float = 0.0

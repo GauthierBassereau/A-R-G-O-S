@@ -6,7 +6,7 @@ import wandb
 
 from source.configs import (
     HFStreamConfig,
-    TrainerConfig,
+    TrainDecoderConfig,
     config_logging,
     ImageDecoderTransposeConfig,
 )
@@ -19,7 +19,7 @@ from source.utils.utils import collect_configs
 config_logging("INFO")
 log = logging.getLogger(__name__)
 
-trainer_cfg = TrainerConfig()
+trainer_cfg = TrainDecoderConfig()
 dataset_cfg = HFStreamConfig(batch_size=trainer_cfg.batch_size)
 image_decoder_cfg = ImageDecoderTransposeConfig()
 
@@ -27,7 +27,6 @@ dataset_loader = HFAsyncImageDataLoader.from_config(
     dataset_cfg,
     transform=make_transform(dataset_cfg.image_size),
 )
-
 encoder = ImageEncoderDinov3().to(trainer_cfg.device).eval()
 decoder = ImageDecoderTranspose.from_config(image_decoder_cfg).to(trainer_cfg.device).train()
 
@@ -93,7 +92,7 @@ for batch in dataset_loader:
     if (trainer_cfg.checkpoint_frequency > 0
         and step % trainer_cfg.checkpoint_frequency == 0
     ):
-        checkpoint_path = checkpoint_dir / f"decoder_step_{step}.pt"
+        checkpoint_path = checkpoint_dir / f"dummy.pt"
         torch.save(
             {
                 "step": step,
@@ -105,7 +104,7 @@ for batch in dataset_loader:
         
         # Log checkpoint as W&B artifact
         artifact = wandb.Artifact("decoder-checkpoints", type="model")
-        artifact.add_file(str(checkpoint_path))
+        artifact.add_file(str(checkpoint_path), name=f"step_{step}")
         wandb.log_artifact(artifact)
 
     if (trainer_cfg.image_log_frequency > 0

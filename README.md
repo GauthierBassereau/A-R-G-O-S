@@ -13,6 +13,8 @@ My project, **A-R-G-O-S**, aims to do exactly this. The goal is to build a syste
 2. **Separate planning from control**, with a high-level world model for planning and a robust low-level controller for executing motor commands.  
 3. **Leverage both web-scale pretraining and simulation**.  
 
+![Robotic System](archive/images/excalidraw.png)
+
 ## Core Idea: Planning vs Control  
 
 The key design choice:  
@@ -74,10 +76,15 @@ This separation provides two major benefits:
 - [x] DINO encoder for image and text (Torch Hub).  
 - [x] Image–text dataset (HuggingFace streaming).  
 - [x] Train Image Decoder as Auto-Encoder (latent visualization).  
-- [ ] Pre-train Flow Matching DiT on Image dataset (text-to-image style).  
-- [ ] Create Video–Instruction dataset (HuggingFace).  
+- [ ] Pre-train Flow Matching DiT on Image dataset (text-to-image style).  -> to align text and Dinov3 features
+- [ ] Create Video–Instruction dataset (HuggingFace).
 - [ ] Train Flow Matching DiT on video data.
 - Design & train Low-Level Controller (first imitation, then sim, then online). -> will detail this later.
+
+## Pipeline Scripts
+
+- `python -m source.pipelines.train_decoder` – trains the transpose-conv decoder to reconstruct images from DINOv3 latents.  
+- `python -m source.pipelines.train_dit_text_to_dino` – pre-trains the DiT to denoise DINOv3 patch embeddings from caption conditioning, mirroring the text-to-image diffusion setup.  
 
 ---
 

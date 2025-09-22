@@ -153,17 +153,26 @@ class HFAsyncImageDataLoader:
             batch_urls: List[str] = []
 
             def schedule_next() -> bool:
-                try:
-                    row = next(self.ds_iter)
-                except StopIteration:
-                    return False
-                url = row[self.url_key]
-                text = row.get(self.text_key, "")
-                task = asyncio.create_task(self._fetch_image(session, url, semaphore))
-                # Attach associated metadata for when the task completes
-                task._meta = {"text": text}
-                pending.add(task)
-                return True
+                while True:
+                    try:
+                        row = next(self.ds_iter)
+                    except StopIteration:
+                        return False
+
+                    text = row.get(self.text_key)
+                    
+                    if not isinstance(text, str):
+                        continue
+                    text = text.strip()
+                    if not text:
+                        continue
+
+                    url = row[self.url_key]
+                    task = asyncio.create_task(self._fetch_image(session, url, semaphore))
+                    # Attach associated metadata for when the task completes
+                    task._meta = {"text": text}
+                    pending.add(task)
+                    return True
 
             # Prime the pipeline
             log.info("Priming pipeline with up to %d tasks...", self.max_concurrency)

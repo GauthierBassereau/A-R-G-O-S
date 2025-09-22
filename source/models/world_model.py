@@ -1,49 +1,250 @@
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from source.configs import WorldModelFMConfig
 from source.models.components import TimestepMLP, FinalLayer, TransformerBlock
 
-class WorldModelFM(nn.Module):
-    """
-    Slightly modified DiT, entirely denoising in the Dinov3 latent space, prediciting futur states auto-regressively given an instruction.
-    Conditions:
-        - Current and past states. For the moment, it is only conditioned using cross-attention layers with added temporal embeddings (RoPE). Need to explore using causal masking on self attention layer. Also could explore conditioned on AdaLN-zero alone/with.
-        - Instructions. Encoded by text encoder trained with Dinov3. Need to explore other encoders too.
+
+class RectifiedFlow(nn.Module):
+    """Wrapper that handles flow-matching loss and sampling around a world model."""
+
+    def __init__(
+        self,
+        net: "WorldModelFM",
+        device: Optional[torch.device] = None,
+        logit_normal_sampling_t: bool = True,
+        predict_velocity: bool = True,
+        default_sample_steps: int = 50,
+    ) -> None:
+        super().__init__()
+        self.net = net
+        self.device = torch.device(device) if isinstance(device, str) else device
+        if self.device is None:
+            self.device = next(net.parameters()).device
+        self.logit_normal_sampling_t = logit_normal_sampling_t
+        self.predict_velocity = predict_velocity
+        self.default_sample_steps = default_sample_steps
+
+    def _sample_timesteps(
+        self,
+        batch_size: int,
+        device: torch.device,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        if self.logit_normal_sampling_t:
+            base = torch.randn(batch_size, device=device, generator=generator)
+            return base.sigmoid()
+        return torch.rand(batch_size, device=device, generator=generator)
+
+    def forward(
+        self,
+        clean_embeddings: torch.Tensor,
+        context_instructions: Optional[torch.Tensor] = None,
+        text_mask: Optional[torch.Tensor] = None,
+        context_observations: Optional[torch.Tensor] = None,
+        history_mask: Optional[torch.Tensor] = None,
+        generator: Optional[torch.Generator] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """Alias for compute_loss so the wrapper behaves like a module."""
+
+        return self.compute_loss(
+            clean_embeddings,
+            context_instructions=context_instructions,
+            text_mask=text_mask,
+            context_observations=context_observations,
+            history_mask=history_mask,
+            generator=generator,
+        )
+
+    def compute_loss(
+        self,
+        clean_embeddings: torch.Tensor,
+        *,
+        context_instructions: Optional[torch.Tensor] = None,
+        text_mask: Optional[torch.Tensor] = None,
+        context_observations: Optional[torch.Tensor] = None,
+        history_mask: Optional[torch.Tensor] = None,
+        generator: Optional[torch.Generator] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        batch_size = clean_embeddings.shape[0]
+        device = clean_embeddings.device
+        timesteps = self._sample_timesteps(
+            batch_size,
+            device=device,
+            generator=generator,
+        ).to(dtype=clean_embeddings.dtype)
+        timestep_factors = timesteps.view(batch_size, 1, 1)
+
+        noise = torch.randn_like(clean_embeddings, generator=generator)
+        noisy_embeddings = (1.0 - timestep_factors) * clean_embeddings + timestep_factors * noise
+
+        prediction = self.net(
+            noisy_embeddings=noisy_embeddings,
+            timesteps=timesteps,
+            context_observations=context_observations,
+            context_instructions=context_instructions,
+            history_mask=history_mask,
+            text_mask=text_mask,
+        )
+
+        if self.predict_velocity:
+            target = noise - clean_embeddings
+        else:
+            target = clean_embeddings
+
+        loss = F.mse_loss(prediction, target)
+
+        return loss, {
+            "timesteps": timesteps.detach(),
+            "noisy_embeddings": noisy_embeddings.detach(),
+            "target": target.detach(),
+            "prediction": prediction.detach(),
+        }
+
+    def _predict_step_cfg(
+        self,
+        noisy_embeddings: torch.Tensor,
+        timesteps: torch.Tensor,
+        context_observations: Optional[torch.Tensor],
+        context_instructions: Optional[torch.Tensor],
+        history_mask: Optional[torch.Tensor],
+        text_mask: Optional[torch.Tensor],
+        cfg_scale: float,
+    ) -> torch.Tensor:
+        conditional = self.net(
+            noisy_embeddings=noisy_embeddings,
+            timesteps=timesteps,
+            context_observations=None,
+            context_instructions=None,
+            history_mask=None,
+            text_mask=None,
+        )
         
-    For the moment, states are only past encoded images, but could be extended to past proprioception too.
-    
-    Cool drawing:
-    
-                             Less Noisy                                                  
-                          World Embeddings                                               
-                                  ▲                                                      
-                         ┌────────┴─────────────────────────────┐                        
-┌────────────────────┐   │                                      │                        
-│                    │   │                                      │                        
-│ Linear+SiLU+Linear │──▶│                 DiT                  │                        
-│                    │   │                                      │                        
-└──────────▲─────────┘   │                                      │                        
-           │             └────────▲──────────────────▲──────────┘                        
-       Timestep                   │               **CFG** on cross-attention layer
-                             Noisy World             └──┬─────────────────────┐          
-                             Embeddings                 │                     │          
-                                  ┌─────────────────────┤                     │          
-                                  │                     │                     │          
-                         ┌─────────────────┐  ┌───────────────────┐       
-                         │                 │  │   Text Encoder    │     Motor Sensors ?
-                         │World Embeddings │  │(DinoTxt, CLIP ...)│
-                         │     Encoder     │  └─────────▲─────────┘
-                         │                 │            │
-                         │ (DINO, JEPA...) │      Instructions
-                         │                 │
-                         └────────▲────────┘                                             
-                                  │                                                      
-                                Past                                                     
-                            Observations                                                 
-    """
+        if cfg_scale == 0:
+            return conditional
+        
+        unconditional = self.net(
+            noisy_embeddings=noisy_embeddings,
+            timesteps=timesteps,
+            context_observations=context_observations,
+            context_instructions=context_instructions,
+            history_mask=history_mask,
+            text_mask=text_mask,
+        )
+
+        return unconditional + cfg_scale * (conditional - unconditional)
+
+    @torch.no_grad()
+    def sample(
+        self,
+        batch_size: int,
+        token_shape: Tuple[int, int],
+        context_observations: Optional[torch.Tensor] = None,
+        context_instructions: Optional[torch.Tensor] = None,
+        history_mask: Optional[torch.Tensor] = None,
+        text_mask: Optional[torch.Tensor] = None,
+        cfg_scale: float = 0.0,
+        sample_steps: Optional[int] = None,
+        generator: Optional[torch.Generator] = None,
+        initial_noise: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        try:
+            num_tokens, feature_dim = token_shape
+        except ValueError as exc:  # pragma: no cover - defensive branch
+            raise ValueError("token_shape must be a tuple of (num_tokens, feature_dim)") from exc
+
+        steps = sample_steps if sample_steps is not None else self.default_sample_steps
+        if steps < 1:
+            raise ValueError("sample_steps must be >= 1")
+
+        param = next(self.net.parameters())
+        device = self.device or param.device
+        dtype = param.dtype
+
+        if initial_noise is not None:
+            if initial_noise.shape != (batch_size, num_tokens, feature_dim):
+                raise ValueError(
+                    "initial_noise must have shape (batch_size, num_tokens, feature_dim)"
+                )
+            current = initial_noise.to(device=device, dtype=dtype)
+        else:
+            current = torch.randn(
+                batch_size,
+                num_tokens,
+                feature_dim,
+                device=device,
+                dtype=dtype,
+                generator=generator,
+            )
+
+        def _move_to_device(
+            tensor: Optional[torch.Tensor],
+            name: str,
+            expect_bool: bool = False,
+        ) -> Optional[torch.Tensor]:
+            if tensor is None:
+                return None
+            if tensor.shape[0] != batch_size:
+                raise ValueError(
+                    f"{name} batch dimension ({tensor.shape[0]}) does not match batch_size {batch_size}"
+                )
+            if expect_bool:
+                return tensor.to(device=device, dtype=torch.bool)
+            return tensor.to(device=device, dtype=dtype)
+
+        context_observations = _move_to_device(
+            context_observations,
+            name="context_observations",
+        )
+        context_instructions = _move_to_device(
+            context_instructions,
+            name="context_instructions",
+        )
+        history_mask = _move_to_device(history_mask, name="history_mask", expect_bool=True)
+        text_mask = _move_to_device(text_mask, name="text_mask", expect_bool=True)
+
+        timesteps = torch.linspace(1.0, 0.0, steps + 1, device=device, dtype=dtype)
+
+        for idx in range(steps):
+            t_curr = timesteps[idx]
+            t_next = timesteps[idx + 1]
+            t_batch = torch.full((batch_size,), float(t_curr), device=device, dtype=dtype)
+
+            if cfg_scale == 0.0:
+                prediction = self.net(
+                    noisy_embeddings=current,
+                    timesteps=t_batch,
+                    context_observations=context_observations,
+                    context_instructions=context_instructions,
+                    history_mask=history_mask,
+                    text_mask=text_mask,
+                )
+            else:
+                prediction = self._predict_step_cfg(
+                    noisy_embeddings=current,
+                    timesteps=t_batch,
+                    context_observations=context_observations,
+                    context_instructions=context_instructions,
+                    history_mask=history_mask,
+                    text_mask=text_mask,
+                    cfg_scale=cfg_scale,
+                )
+
+            if self.predict_velocity:
+                velocity = prediction
+            else:
+                denom = torch.clamp(t_batch.view(batch_size, 1, 1), min=1e-5)
+                velocity = (current - prediction) / denom
+
+            current = current + (t_next - t_curr) * velocity
+
+        return current
+
+class WorldModelFM(nn.Module):
+    """DiT-style denoiser that operates in the DINOv3 latent space with optional text and history context."""
 
     def __init__(
         self,
@@ -52,6 +253,7 @@ class WorldModelFM(nn.Module):
         depth: int = 12,
         num_heads: int = 16,
         mlp_ratio: float = 4.0,
+        num_register_tokens: int = 4,
         time_embed_dim: int = 256,
         time_cond_dim: int = 1024,
         attention_dropout: float = 0.0,
@@ -69,6 +271,18 @@ class WorldModelFM(nn.Module):
 
         self.device = device
         self.dtype = dtype
+
+        if num_register_tokens < 0:
+            raise ValueError("num_register_tokens must be non-negative")
+
+        self.num_register_tokens = num_register_tokens
+        self.register_tokens = (
+            nn.Parameter(torch.zeros(num_register_tokens, latent_dim))
+            if num_register_tokens > 0
+            else None
+        )
+        if self.register_tokens is not None:
+            nn.init.normal_(self.register_tokens, mean=0.0, std=0.02)
 
         self.input_proj = (
             nn.Linear(input_dim, latent_dim)
@@ -142,6 +356,13 @@ class WorldModelFM(nn.Module):
         x = self.input_proj(noisy_embeddings)
         cond = self.timestep_mlp(timesteps).to(x.dtype)
 
+        expanded_register_tokens = None
+        if self.register_tokens is not None:
+            batch_size = x.shape[0]
+            expanded_register_tokens = self.register_tokens.unsqueeze(0).expand(batch_size, -1, -1)
+            expanded_register_tokens = expanded_register_tokens.to(dtype=x.dtype)
+            x = torch.cat([expanded_register_tokens, x], dim=1)
+
         text_tokens, text_padding_mask = self._prepare_text_context(
             context_instructions=context_instructions,
             text_mask=text_mask,
@@ -165,43 +386,11 @@ class WorldModelFM(nn.Module):
 
         x = self.final_layer(x, cond)
         x = self.output_proj(x)
+
+        if expanded_register_tokens is not None:
+            x = x[:, self.num_register_tokens :]
+
         return x
-
-    def forward_with_cfg(
-        self,
-        noisy_embeddings: torch.Tensor,
-        timesteps: torch.Tensor,
-        context_observations: Optional[torch.Tensor] = None,
-        context_instructions: Optional[torch.Tensor] = None,
-        cfg_scale: float = 1.0,
-        history_mask: Optional[torch.Tensor] = None,
-        text_mask: Optional[torch.Tensor] = None,
-        uncond_context_observations: Optional[torch.Tensor] = None,
-        uncond_context_instructions: Optional[torch.Tensor] = None,
-        uncond_history_mask: Optional[torch.Tensor] = None,
-        uncond_text_mask: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """Run conditional and unconditional passes then blend with classifier-free guidance."""
-
-        conditional = self.forward(
-            noisy_embeddings=noisy_embeddings,
-            timesteps=timesteps,
-            context_observations=context_observations,
-            context_instructions=context_instructions,
-            history_mask=history_mask,
-            text_mask=text_mask,
-        )
-
-        unconditional = self.forward(
-            noisy_embeddings=noisy_embeddings,
-            timesteps=timesteps,
-            context_observations=uncond_context_observations,
-            context_instructions=uncond_context_instructions,
-            history_mask=uncond_history_mask,
-            text_mask=uncond_text_mask,
-        )
-
-        return unconditional + cfg_scale * (conditional - unconditional)
 
     @classmethod
     def from_config(cls, config: WorldModelFMConfig) -> "WorldModelFM":
@@ -301,41 +490,3 @@ class WorldModelFM(nn.Module):
         positions = torch.arange(num_frames, device=device)
         positions = positions.repeat_interleave(tokens_per_frame)
         return positions
-
-
-if __name__ == "__main__":
-    device = 'mps'
-    cfg = WorldModelFMConfig()
-    model = WorldModelFM.from_config(cfg)
-    model.eval().to(device)
-    print(model)
-    print(f"Total parameters: {sum(p.numel() for p in model.parameters())}")
-    
-
-    B, N = 2, 128
-    noisy = torch.randn(B, N, cfg.input_dim).to(device)
-    timesteps = torch.rand(B).to(device)
-    num_frames, tokens_per_frame = 4, 128
-    context_obs = torch.randn(B, num_frames, tokens_per_frame, cfg.history_context_dim).to(device)
-    context_txt = torch.randn(B, 8, cfg.text_context_dim).to(device)
-    history_mask = torch.zeros(B, num_frames, dtype=torch.bool).to(device)
-    history_mask[0, -1] = True
-
-    with torch.no_grad():
-        out = model(
-            noisy_embeddings=noisy,
-            timesteps=timesteps,
-            context_observations=context_obs,
-            context_instructions=context_txt,
-            history_mask=history_mask,
-        )
-        out_cfg = model.forward_with_cfg(
-            noisy_embeddings=noisy,
-            timesteps=timesteps,
-            context_observations=context_obs,
-            context_instructions=context_txt,
-            history_mask=history_mask,
-            cfg_scale=2.0,
-        )
-    print("Output shape:", tuple(out.shape))
-    print("CFG output shape:", tuple(out_cfg.shape))
