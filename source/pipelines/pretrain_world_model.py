@@ -1,4 +1,4 @@
-"""Minimal training loop to pretrain the world model with flow matching."""
+"""Minimal training loop to pretrain the world model with flow matching + wandb loss logging."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import torch
+import wandb  # NEW: wandb
 
 from source.configs import (
     HFStreamConfig,
@@ -105,6 +106,7 @@ def main() -> None:
         text_encoder_device=trainer_cfg.device,
     )
     dataset_cfg.transform = make_transform(dataset_cfg.image_size)
+    dataset_cfg.batch_size = trainer_cfg.batch_size
 
     world_model_cfg = WorldModelFMConfig()
 
@@ -115,79 +117,100 @@ def main() -> None:
     )
     log.info("Starting world model pretraining with config: %s", run_config)
 
-    loader = HFAsyncImageDataLoader.from_config(dataset_cfg)
-    world_model = WorldModelFM.from_config(world_model_cfg)
-    flow_model = RectifiedFlow(
-        world_model,
-        logit_normal_sampling_t=trainer_cfg.rectified_flow_logit_normal_sampling_t,
-        predict_velocity=trainer_cfg.rectified_flow_predict_velocity,
-        default_sample_steps=trainer_cfg.rectified_flow_sample_steps,
-    ).to(device)
-    flow_model.train()
-
-    optimizer = torch.optim.AdamW(
-        flow_model.parameters(),
-        lr=trainer_cfg.learning_rate,
-        betas=trainer_cfg.adam_betas,
-        weight_decay=trainer_cfg.weight_decay,
+    log.info("Initializing wandb run with config.")
+    wandb.init(
+        project="argos",
+        name="world-model-fm",
+        config=run_config,
     )
 
-    checkpoint_dir = Path(trainer_cfg.checkpoint_dir)
-    accum_steps = max(1, trainer_cfg.gradient_accumulation_steps)
-    accum_loss = 0.0
-    micro_step = 0
-    global_step = 0
-    model_dtype = next(flow_model.parameters()).dtype
+    try:
+        loader = HFAsyncImageDataLoader.from_config(dataset_cfg)
+        world_model = WorldModelFM.from_config(world_model_cfg)
+        flow_model = RectifiedFlow(
+            world_model,
+            logit_normal_sampling_t=trainer_cfg.rectified_flow_logit_normal_sampling_t,
+            predict_velocity=trainer_cfg.rectified_flow_predict_velocity,
+            default_sample_steps=trainer_cfg.rectified_flow_sample_steps,
+        ).to(device)
+        flow_model.train()
 
-    optimizer.zero_grad(set_to_none=True)
-
-    for batch in loader:
-        image_embeddings = batch.get("image_embeddings")
-        if not image_embeddings or "patch_backbone" not in image_embeddings:
-            raise RuntimeError("Dataset batch missing DINO patch embeddings.")
-
-        clean_embeddings = image_embeddings["patch_backbone"].to(
-            device=device,
-            dtype=model_dtype,
+        optimizer = torch.optim.AdamW(
+            flow_model.parameters(),
+            lr=trainer_cfg.learning_rate,
+            betas=trainer_cfg.adam_betas,
+            weight_decay=trainer_cfg.weight_decay,
         )
 
-        text_embeddings = batch.get("text_embeddings")
-        context_instructions, text_mask = _prepare_text_context(
-            text_embeddings,
-            device=device,
-            dtype=model_dtype,
-            dropout_prob=trainer_cfg.text_dropout_prob,
-        )
-
-        loss, _ = flow_model(
-            clean_embeddings,
-            context_instructions=context_instructions,
-            text_mask=text_mask,
-        )
-
-        loss_value = float(loss.detach())
-        (loss / accum_steps).backward()
-        accum_loss += loss_value
-        micro_step += 1
-
-        if micro_step % accum_steps != 0:
-            continue
-
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-
-        global_step += 1
-        mean_loss = accum_loss / accum_steps
+        checkpoint_dir = Path(trainer_cfg.checkpoint_dir)
+        accum_steps = max(1, trainer_cfg.gradient_accumulation_steps)
         accum_loss = 0.0
         micro_step = 0
+        global_step = 0
+        model_dtype = next(flow_model.parameters()).dtype
 
-        if trainer_cfg.log_frequency > 0 and global_step % trainer_cfg.log_frequency == 0:
-            log.info("step=%d loss=%.6f", global_step, mean_loss)
+        optimizer.zero_grad(set_to_none=True)
 
-        if (
-            trainer_cfg.checkpoint_frequency > 0
-            and global_step % trainer_cfg.checkpoint_frequency == 0
-        ):
+        for batch in loader:
+            image_embeddings = batch.get("image_embeddings")
+
+            if not image_embeddings or "patch_backbone" not in image_embeddings:
+                raise RuntimeError("Dataset batch missing DINO patch embeddings.")
+
+            clean_embeddings = image_embeddings["patch_backbone"].to(
+                device=device,
+                dtype=model_dtype,
+            )
+
+            text_embeddings = batch.get("text_embeddings")
+            context_instructions, text_mask = _prepare_text_context(
+                text_embeddings,
+                device=device,
+                dtype=model_dtype,
+                dropout_prob=trainer_cfg.text_dropout_prob,
+            )
+
+            loss, _ = flow_model(
+                clean_embeddings,
+                context_instructions=context_instructions,
+                text_mask=text_mask,
+            )
+
+            loss_value = float(loss.detach())
+            (loss / accum_steps).backward()
+            accum_loss += loss_value
+            micro_step += 1
+
+            if micro_step % accum_steps != 0:
+                continue
+
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+            global_step += 1
+            mean_loss = accum_loss / accum_steps
+            accum_loss = 0.0
+            micro_step = 0
+
+            wandb.log({"train/loss": mean_loss}, step=global_step)
+
+            if trainer_cfg.log_frequency > 0 and global_step % trainer_cfg.log_frequency == 0:
+                log.info("step=%d loss=%.6f", global_step, mean_loss)
+
+            if (
+                trainer_cfg.checkpoint_frequency > 0
+                and global_step % trainer_cfg.checkpoint_frequency == 0
+            ):
+                ckpt_path = _save_checkpoint(
+                    checkpoint_dir,
+                    global_step,
+                    flow_model,
+                    optimizer,
+                    run_config,
+                )
+                log.info("Saved checkpoint to %s", ckpt_path)
+
+        if global_step > 0:
             ckpt_path = _save_checkpoint(
                 checkpoint_dir,
                 global_step,
@@ -195,17 +218,10 @@ def main() -> None:
                 optimizer,
                 run_config,
             )
-            log.info("Saved checkpoint to %s", ckpt_path)
-            
-    if global_step > 0:
-        ckpt_path = _save_checkpoint(
-            checkpoint_dir,
-            global_step,
-            flow_model,
-            optimizer,
-            run_config,
-        )
-        log.info("Saved final checkpoint to %s", ckpt_path)
+            log.info("Saved final checkpoint to %s", ckpt_path)
+    finally:
+        # --- NEW: ensure wandb run is properly closed ---
+        wandb.finish()
 
 
 if __name__ == "__main__":

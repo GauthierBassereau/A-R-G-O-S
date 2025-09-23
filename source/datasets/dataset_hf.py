@@ -1,3 +1,4 @@
+import os
 import asyncio
 import io
 import logging
@@ -14,6 +15,8 @@ from source.models.image_encoder_dinov3 import ImageEncoderDinov3
 from source.models.text_encoder_dinov3 import TextEncoderDinov3
 
 log = logging.getLogger(__name__)
+
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
 class HFAsyncImageDataLoader:
     """
@@ -157,7 +160,7 @@ class HFAsyncImageDataLoader:
     def _encode_images(self, images: torch.Tensor) -> Dict[str, torch.Tensor]:
         encoder = self._ensure_image_encoder()
         assert self._image_encoder_device is not None
-        images_device = images.to(self._image_encoder_device, non_blocking=True)
+        images_device = images.to(self._image_encoder_device, non_blocking=False)
         with torch.inference_mode():
             features = encoder(
                 images_device,
@@ -329,8 +332,7 @@ class HFAsyncImageDataLoader:
 
 
 if __name__ == "__main__":
-    from source.utils.image_transforms import make_transform
-    from source.utils.utils import debug_show_img
+    from source.utils.utils import make_transform
     logging.basicConfig(level=logging.INFO)
     cfg = HFStreamConfig()
     cfg.transform = make_transform(cfg.image_size)
@@ -339,6 +341,6 @@ if __name__ == "__main__":
         imgs = batch["images"]  # [B, C, H, W]
         texts = batch["texts"]  # list[str]
         urls = batch["urls"]    # list[str]
-        print(imgs.shape, texts[0] if texts else "")
-        debug_show_img(imgs, i=0)
-        debug_show_img(imgs, i=1)
+        embeddings = batch["image_embeddings"]["patch_backbone"]
+        print(embeddings.shape, texts[0] if texts else "")
+        print(embeddings.device)

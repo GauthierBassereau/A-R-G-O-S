@@ -74,7 +74,7 @@ class RectifiedFlow(nn.Module):
         ).to(dtype=clean_embeddings.dtype)
         timestep_factors = timesteps.view(batch_size, 1, 1)
 
-        noise = torch.randn_like(clean_embeddings, generator=generator)
+        noise = torch.randn_like(clean_embeddings) # TODO Generator cannot be an argument, use randn
         noisy_embeddings = (1.0 - timestep_factors) * clean_embeddings + timestep_factors * noise
 
         prediction = self.net(
