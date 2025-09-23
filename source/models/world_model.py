@@ -14,16 +14,12 @@ class RectifiedFlow(nn.Module):
     def __init__(
         self,
         net: "WorldModelFM",
-        device: Optional[torch.device] = None,
         logit_normal_sampling_t: bool = True,
         predict_velocity: bool = True,
         default_sample_steps: int = 50,
     ) -> None:
         super().__init__()
         self.net = net
-        self.device = torch.device(device) if isinstance(device, str) else device
-        if self.device is None:
-            self.device = next(net.parameters()).device
         self.logit_normal_sampling_t = logit_normal_sampling_t
         self.predict_velocity = predict_velocity
         self.default_sample_steps = default_sample_steps
@@ -161,7 +157,7 @@ class RectifiedFlow(nn.Module):
             raise ValueError("sample_steps must be >= 1")
 
         param = next(self.net.parameters())
-        device = self.device or param.device
+        device = param.device
         dtype = param.dtype
 
         if initial_noise is not None:
@@ -264,13 +260,8 @@ class WorldModelFM(nn.Module):
         use_history_rope: bool = True,
         history_rope_base: float = 10000.0,
         condition_use_gate: bool = True,
-        device: Optional[str] = None,
-        dtype: Optional[torch.dtype] = None,
     ):
         super().__init__()
-
-        self.device = device
-        self.dtype = dtype
 
         if num_register_tokens < 0:
             raise ValueError("num_register_tokens must be non-negative")

@@ -16,19 +16,19 @@ class TrainDecoderConfig:
 
 @dataclass
 class PretrainWorldModelConfig:
-    device: str = "cuda"
+    device: str = "cuda:1"
     learning_rate: float = 2e-4
     batch_size: int = 1
     gradient_accumulation_steps: int = 1
     text_dropout_prob: float = 0.5
     checkpoint_frequency: int = 1000
     log_frequency: int = 250
-    adam_betas: Tuple[float, float] = (0.9, 0.999)
-    weight_decay: float = 0.01
-    max_steps: int = 100000
+    adam_betas: Optional[Tuple[float, float]] = (0.9, 0.999)
+    weight_decay: float = 0.0
     cfg_log_scale: float = 4.0
     checkpoint_dir: str = "checkpoints/world_model"
-    decoder_checkpoint_path: Optional[str] = None
+    decoder_checkpoint_path: Optional[str] = "checkpoints/step_2000.pt"
+    decoder_device: Optional[str] = "cuda:0"
     image_log_frequency: int = 1000
     rectified_flow_sample_steps: int = 50
     rectified_flow_logit_normal_sampling_t: bool = True
@@ -42,8 +42,6 @@ class ImageDecoderTransposeConfig:
     depth: int = 64
     kernel_size: int = 5
     stride: int = 3
-    device: Optional[str] = None
-    dtype: Optional[torch.dtype] = None
     
 @dataclass
 class WorldModelFMConfig:
@@ -63,8 +61,6 @@ class WorldModelFMConfig:
     use_history_rope: bool = True
     history_rope_base: float = 10000.0
     condition_use_gate: bool = True
-    device: Optional[str] = None
-    dtype: Optional[torch.dtype] = None
     
 # ---------- Configs for DatasetStream ----------
 @dataclass
