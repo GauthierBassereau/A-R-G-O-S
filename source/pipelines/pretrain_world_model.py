@@ -48,7 +48,7 @@ def _prepare_text_context(
     if text_embeddings.dim() != 2:
         raise ValueError("text_embeddings must have shape (B, D)")
 
-    instructions = text_embeddings.to(device=device, dtype=dtype).unsqueeze(1)
+    instructions = text_embeddings.to(device=device, dtype=dtype).unsqueeze(1).clone()
 
     if dropout_prob <= 0:
         return instructions, None
@@ -160,7 +160,7 @@ def main() -> None:
             clean_embeddings = image_embeddings["patch_backbone"].to(
                 device=device,
                 dtype=model_dtype,
-            )
+            ).clone()
 
             text_embeddings = batch.get("text_embeddings")
             context_instructions, text_mask = _prepare_text_context(
@@ -170,11 +170,68 @@ def main() -> None:
                 dropout_prob=trainer_cfg.text_dropout_prob,
             )
 
-            loss, _ = flow_model(
+            loss, out = flow_model(
                 clean_embeddings,
                 context_instructions=context_instructions,
                 text_mask=text_mask,
             )
+            with torch.no_grad():
+                import matplotlib
+                matplotlib.use("Agg")  # non-interactive backend (safe on server)
+                import matplotlib.pyplot as plt
+                import numpy as np
+
+                # Take sample 0, token 0
+                clean_vec = clean_embeddings[0, 0].detach().cpu().float()
+                mix_vec   = out["noisy_embeddings"][0, 0].detach().cpu().float()
+                t_used    = float(out["timesteps"][0].item())
+
+                # Reconstruct the PURE noise vector used this step
+                # If predict_velocity=True, target = noise - clean  -> noise = target + clean
+                # Else, target = clean (x0 prediction), so noise isn't in 'target'; fall back to mix + ...
+                if trainer_cfg.rectified_flow_predict_velocity:
+                    noise_vec = (out["target"][0, 0].detach().cpu().float() + clean_vec).detach().cpu().float()
+                else:
+                    # When predicting x0, we don't have ε directly. Recover it from the linear mix:
+                    # x_t = (1 - t) x0 + t ε  =>  ε = (x_t - (1 - t) x0) / t
+                    eps = 1e-6
+                    noise_vec = ((mix_vec - (1.0 - t_used) * clean_vec) / max(t_used, eps)).detach().cpu().float()
+
+                # --- Overlaid histograms (per-dimension distributions) ---
+                fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+                bins = 60
+                axes[0].hist(clean_vec.numpy(), bins=bins, density=True, alpha=0.45, label="clean (x₀)")
+                axes[0].hist(noise_vec.numpy(), bins=bins, density=True, alpha=0.45, label="pure noise (ε)")
+                axes[0].hist(mix_vec.numpy(),   bins=bins, density=True, alpha=0.45, label=f"mixture (xₜ, t={t_used:.3f})")
+                axes[0].set_title("Per-dim distributions (token 0)")
+                axes[0].set_xlabel("value"); axes[0].set_ylabel("density")
+                axes[0].legend(loc="upper right")
+
+                # --- QQ plot: clean vs pure noise ---
+                q = np.linspace(0.01, 0.99, 199)  # avoid extreme tails noise
+                clean_q = np.quantile(clean_vec.numpy(), q)
+                noise_q = np.quantile(noise_vec.numpy(), q)
+                mn = float(min(clean_q.min(), noise_q.min()))
+                mx = float(max(clean_q.max(), noise_q.max()))
+
+                axes[1].plot(noise_q, clean_q, ".", markersize=3)
+                axes[1].plot([mn, mx], [mn, mx], linewidth=1)  # y=x reference
+                axes[1].set_title("QQ plot: clean vs pure noise")
+                axes[1].set_xlabel("noise quantiles (ε)")
+                axes[1].set_ylabel("clean quantiles (x₀)")
+
+                # Annotate means/stds for quick sanity
+                def _ms(x): 
+                    return float(x.mean().item()), float(x.std(unbiased=False).item())
+                m0, s0 = _ms(clean_vec); me, se = _ms(noise_vec); mt, st = _ms(mix_vec)
+                stats_txt = f"x₀: μ={m0:.3f}, σ={s0:.3f}\nε: μ={me:.3f}, σ={se:.3f}\nxₜ: μ={mt:.3f}, σ={st:.3f}"
+                axes[0].text(0.02, 0.98, stats_txt, transform=axes[0].transAxes,
+                            va="top", ha="left", bbox=dict(boxstyle="round", alpha=0.15, pad=0.3))
+
+                fig.tight_layout()
+                fig.savefig("first_token_dists.png", dpi=150)
+                plt.close(fig)
 
             loss_value = float(loss.detach())
             (loss / accum_steps).backward()

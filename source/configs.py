@@ -17,10 +17,10 @@ class TrainDecoderConfig:
 @dataclass
 class PretrainWorldModelConfig:
     device: str = "cuda:1"
-    learning_rate: float = 1e-3
-    batch_size: int = 32
+    learning_rate: float = 1e-4
+    batch_size: int = 48
     gradient_accumulation_steps: int = 1
-    text_dropout_prob: float = 0.5
+    text_dropout_prob: float = 0.0
     checkpoint_frequency: int = 1000
     log_frequency: int = 1
     adam_betas: Optional[Tuple[float, float]] = (0.9, 0.999)
@@ -60,7 +60,7 @@ class WorldModelFMConfig:
     history_context_dim: int = 1024
     use_history_rope: bool = True
     history_rope_base: float = 1000.0
-    condition_use_gate: bool = True
+    condition_use_gate: bool = False
     
 # ---------- Configs for DatasetStream ----------
 @dataclass

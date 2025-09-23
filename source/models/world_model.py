@@ -35,6 +35,15 @@ class RectifiedFlow(nn.Module):
             return base.sigmoid()
         return torch.rand(batch_size, device=device, generator=generator)
 
+    def _sample_ln_style_noise(self, x: torch.Tensor, generator: Optional[torch.Generator] = None):
+        # x: (B, N, C)
+        eps = torch.randn(x.shape, device=x.device, dtype=x.dtype, generator=generator)
+        eps = eps - eps.mean(dim=-1, keepdim=True)
+        # add small epsilon for numerical stability
+        eps = eps / (eps.std(dim=-1, keepdim=True) + 1e-6)
+        eps = eps * 0.30
+        return eps
+
     def forward(
         self,
         clean_embeddings: torch.Tensor,
@@ -74,7 +83,7 @@ class RectifiedFlow(nn.Module):
         ).to(dtype=clean_embeddings.dtype)
         timestep_factors = timesteps.view(batch_size, 1, 1)
 
-        noise = torch.randn_like(clean_embeddings) # TODO Generator cannot be an argument, use randn
+        noise = self._sample_ln_style_noise(clean_embeddings, generator=generator)
         noisy_embeddings = (1.0 - timestep_factors) * clean_embeddings + timestep_factors * noise
 
         prediction = self.net(
@@ -113,10 +122,10 @@ class RectifiedFlow(nn.Module):
         conditional = self.net(
             noisy_embeddings=noisy_embeddings,
             timesteps=timesteps,
-            context_observations=None,
-            context_instructions=None,
-            history_mask=None,
-            text_mask=None,
+            context_observations=context_observations,
+            context_instructions=context_instructions,
+            history_mask=history_mask,
+            text_mask=text_mask,
         )
         
         if cfg_scale == 0:
@@ -125,10 +134,10 @@ class RectifiedFlow(nn.Module):
         unconditional = self.net(
             noisy_embeddings=noisy_embeddings,
             timesteps=timesteps,
-            context_observations=context_observations,
-            context_instructions=context_instructions,
-            history_mask=history_mask,
-            text_mask=text_mask,
+            context_observations=None,
+            context_instructions=None,
+            history_mask=None,
+            text_mask=None,
         )
 
         return unconditional + cfg_scale * (conditional - unconditional)
@@ -255,7 +264,7 @@ class WorldModelFM(nn.Module):
         attention_dropout: float = 0.0,
         cross_attention_dropout: float = 0.0,
         mlp_dropout: float = 0.0,
-        text_context_dim: int = 1024,
+        text_context_dim: int = 2048,
         history_context_dim: int = 1024,
         use_history_rope: bool = True,
         history_rope_base: float = 10000.0,
